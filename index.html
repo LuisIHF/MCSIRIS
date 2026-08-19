@@ -8,6 +8,7 @@
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 <style>
 :root{
   --bg:#F4F6F9;
@@ -307,6 +308,7 @@ label.req::after{content:' *';color:var(--danger);}
       <div class="sb-item" data-view="templates"><span class="ic">▥</span>Plantillas</div>
       <div class="sb-item" data-view="sla" data-admin-only="1"><span class="ic">◷</span>Políticas SLA</div>
       <div class="sb-item" data-view="agents" data-admin-only="1"><span class="ic">◍</span>Agentes</div>
+      <div class="sb-item" data-view="import" data-admin-only="1"><span class="ic">⇩</span>Importar tickets</div>
       <div class="sb-section-label">Análisis</div>
       <div class="sb-item" data-view="reports"><span class="ic">◫</span>Reportes / KPIs</div>
     </div>
@@ -436,6 +438,56 @@ label.req::after{content:' *';color:var(--danger);}
       </div>
       <div class="panel">
         <p class="hint">El acceso es solo por invitación: crea aquí el nombre, correo y rol de cada agente; ellos activan su cuenta poniendo su propia contraseña en la pantalla de inicio de sesión, opción "Activar mi cuenta".</p>
+      </div>
+    </div>
+
+    <!-- ================= IMPORTAR ================= -->
+    <div class="view" id="view-import">
+      <div class="topbar">
+        <div><h2>Importar tickets</h2><div class="sub">Carga histórica desde HaloITSM u otro sistema (archivo CSV)</div></div>
+      </div>
+
+      <div class="panel">
+        <h3>1. Sube tu archivo CSV</h3>
+        <p class="hint" style="margin-bottom:10px;">Exporta tus reportes desde HaloITSM a CSV y súbelo aquí. La primera fila debe contener los encabezados de columna.</p>
+        <input type="file" id="importFile" accept=".csv">
+      </div>
+
+      <div class="panel" id="importMapPanel" style="display:none;">
+        <h3>2. Relaciona las columnas de tu CSV con los campos del sistema</h3>
+        <div id="importMapGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;"></div>
+
+        <div class="row-3" style="margin-top:16px;">
+          <div class="field"><label>Tipo de ticket por defecto</label>
+            <select id="importDefaultType"><option value="incidente">Incidente</option><option value="solicitud">Solicitud</option><option value="problema">Problema</option><option value="cambio">Cambio</option></select>
+            <div class="hint">Se usa si tu CSV no trae una columna de tipo, o si el valor no se reconoce.</div>
+          </div>
+          <div class="field"><label>Estado por defecto</label>
+            <select id="importDefaultStatus"><option value="cerrado">Cerrado</option><option value="resuelto">Resuelto</option><option value="nuevo">Nuevo</option></select>
+            <div class="hint">Para tickets históricos, "Cerrado" suele ser lo correcto.</div>
+          </div>
+          <div class="field"><label>Prioridad por defecto</label>
+            <select id="importDefaultPriority"><option value="P3">P3</option><option value="P1">P1</option><option value="P2">P2</option><option value="P4">P4</option></select>
+            <div class="hint">Se usa si no hay columna de prioridad/impacto/urgencia reconocible.</div>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="btnPreviewImport" style="margin-top:6px;">Ver vista previa</button>
+      </div>
+
+      <div class="panel" id="importPreviewPanel" style="display:none;">
+        <h3>3. Vista previa (primeras 8 filas de <span id="importTotalRows">0</span>)</h3>
+        <div style="overflow-x:auto;"><table id="importPreviewTable"><thead></thead><tbody></tbody></table></div>
+        <div style="display:flex;gap:8px;margin-top:16px;">
+          <button class="btn btn-primary" id="btnConfirmImport">Importar todos los tickets</button>
+          <button class="btn btn-ghost" id="btnCancelImport">Cancelar</button>
+        </div>
+        <div id="importProgress" style="margin-top:12px;font-size:12.5px;color:var(--text-2);"></div>
+      </div>
+
+      <div class="panel">
+        <h3>¿Prefieres conectar HaloITSM directamente por API?</h3>
+        <p class="hint">También puedo construir una sincronización automática contra la API de HaloITSM (sin exponer tus credenciales en el navegador, usando una función segura del lado del servidor). Para eso necesito la URL de tu instancia y unas credenciales de API con permiso de solo lectura sobre reportes/tickets. Mientras tanto, la carga por CSV es inmediata y no requiere nada de tu lado más que el archivo exportado.</p>
       </div>
     </div>
 
@@ -817,7 +869,7 @@ document.querySelectorAll('[data-view-link]').forEach(a=>{
   a.addEventListener('click', (e)=>{e.preventDefault(); switchView(a.dataset.viewLink);});
 });
 function switchView(view){
-  const adminOnlyViews = ['clients','sla','agents'];
+  const adminOnlyViews = ['clients','sla','agents','import'];
   if(adminOnlyViews.includes(view) && STATE.agent?.role !== 'admin'){
     toast('Solo un administrador puede acceder a esta sección');
     view = 'dashboard';
@@ -1211,6 +1263,7 @@ function renderTicketDrawerBody(t, comments){
       ${slaChipHtml(t)}
     </div>
 
+    ${t.external_ref ? `<div class="hint" style="margin-bottom:10px;">Folio original (${t.external_source||'sistema externo'}): <strong>${escapeHtml(t.external_ref)}</strong></div>` : ''}
     <div class="detail-grid">
       <div class="dg-item"><div class="k">Cliente</div><div class="v">${client?.name || '—'}</div></div>
       <div class="dg-item"><div class="k">Origen</div><div class="v">${SOURCE_LABELS[t.source]||'—'}</div></div>
@@ -1538,6 +1591,262 @@ document.getElementById('submitInvite').addEventListener('click', async ()=>{
   toast('Invitación creada para '+email);
   document.getElementById('inviteModal').classList.remove('active');
   await loadAll();
+});
+
+/* =========================================================
+   IMPORTAR TICKETS DESDE CSV (HaloITSM u otro sistema)
+========================================================= */
+const IMPORT_FIELDS = [
+  {key:'', label:'— No importar —'},
+  {key:'external_ref', label:'Folio / ID original'},
+  {key:'ticket_type', label:'Tipo (incidente/solicitud/problema/cambio)'},
+  {key:'title', label:'Título / Asunto'},
+  {key:'description', label:'Descripción'},
+  {key:'client_name', label:'Cliente (nombre)'},
+  {key:'status', label:'Estado'},
+  {key:'priority', label:'Prioridad (P1-P4)'},
+  {key:'impact', label:'Impacto (alto/medio/bajo)'},
+  {key:'urgency', label:'Urgencia (alto/medio/bajo)'},
+  {key:'agent_name', label:'Agente asignado (nombre o correo)'},
+  {key:'reported_by', label:'Reportado por'},
+  {key:'created_at', label:'Fecha de creación'},
+  {key:'resolved_at', label:'Fecha de resolución'},
+  {key:'closed_at', label:'Fecha de cierre'},
+];
+let importState = { rows: [], headers: [], mapping: {} };
+
+document.getElementById('importFile').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  Papa.parse(file, {
+    header: true, skipEmptyLines: true,
+    complete: (res)=>{
+      importState.rows = res.data;
+      importState.headers = res.meta.fields || [];
+      if(importState.rows.length === 0){ toast('El archivo no tiene filas de datos'); return; }
+      renderImportMapping();
+      document.getElementById('importMapPanel').style.display = 'block';
+      document.getElementById('importPreviewPanel').style.display = 'none';
+    },
+    error: (err)=> toast('Error leyendo CSV: '+err.message)
+  });
+});
+
+function guessField(header){
+  const h = header.toLowerCase();
+  if(/folio|^id$|ticket.?number|reference|referencia/.test(h)) return 'external_ref';
+  if(/^tipo|type/.test(h)) return 'ticket_type';
+  if(/asunto|title|subject|t[ií]tulo/.test(h)) return 'title';
+  if(/descripci|description|detalle/.test(h)) return 'description';
+  if(/cliente|client|company|empresa/.test(h)) return 'client_name';
+  if(/status|estado/.test(h)) return 'status';
+  if(/priorit|prioridad/.test(h)) return 'priority';
+  if(/impact/.test(h)) return 'impact';
+  if(/urgenc/.test(h)) return 'urgency';
+  if(/agent|t[eé]cnico|assigned|asignado/.test(h)) return 'agent_name';
+  if(/reported|reporta|solicitante|requester/.test(h)) return 'reported_by';
+  if(/created|creaci[oó]n|fecha.*(alta|apertura)/.test(h)) return 'created_at';
+  if(/resolved|resoluci[oó]n/.test(h)) return 'resolved_at';
+  if(/closed|cierre/.test(h)) return 'closed_at';
+  return '';
+}
+
+function renderImportMapping(){
+  const grid = document.getElementById('importMapGrid');
+  grid.innerHTML = importState.headers.map(h=>{
+    const guess = guessField(h);
+    return `<div class="field" style="margin-bottom:0;">
+      <label>${escapeHtml(h)}</label>
+      <select data-map-header="${escapeHtml(h)}">
+        ${IMPORT_FIELDS.map(f=>`<option value="${f.key}" ${f.key===guess?'selected':''}>${f.label}</option>`).join('')}
+      </select>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('btnPreviewImport').addEventListener('click', ()=>{
+  importState.mapping = {};
+  document.querySelectorAll('#importMapGrid select[data-map-header]').forEach(sel=>{
+    if(sel.value) importState.mapping[sel.dataset.mapHeader] = sel.value;
+  });
+  const mappedFields = Object.values(importState.mapping);
+  if(!mappedFields.includes('title')){ toast('Debes mapear al menos la columna de Título/Asunto'); return; }
+  renderImportPreview();
+});
+
+function mapRow(row){
+  const out = {};
+  for(const [header, field] of Object.entries(importState.mapping)){
+    out[field] = (row[header] ?? '').toString().trim();
+  }
+  return out;
+}
+
+function parseImportDate(v){
+  if(!v) return null;
+  const d = new Date(v);
+  if(!isNaN(d.getTime())) return d.toISOString();
+  // intentar formato dd/mm/yyyy
+  const m = v.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  if(m){
+    const d2 = new Date(`${m[3].length===2?'20'+m[3]:m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+    if(!isNaN(d2.getTime())) return d2.toISOString();
+  }
+  return null;
+}
+function normStatus(v, fallback){
+  if(!v) return fallback;
+  const s = v.toLowerCase();
+  if(/cerra|closed/.test(s)) return 'cerrado';
+  if(/resuel|resolved/.test(s)) return 'resuelto';
+  if(/progres|progress|en curso/.test(s)) return 'en_progreso';
+  if(/asigna|assigned/.test(s)) return 'asignado';
+  if(/cancel/.test(s)) return 'cancelado';
+  if(/espera cliente|pending customer|waiting customer/.test(s)) return 'en_espera_cliente';
+  if(/espera proveedor|waiting.*(vendor|supplier)/.test(s)) return 'en_espera_proveedor';
+  if(/nuevo|new|open|abierto/.test(s)) return 'nuevo';
+  return fallback;
+}
+function normType(v, fallback){
+  if(!v) return fallback;
+  const s = v.toLowerCase();
+  if(/incident/.test(s)) return 'incidente';
+  if(/request|solicitud|service request/.test(s)) return 'solicitud';
+  if(/problem/.test(s)) return 'problema';
+  if(/change|cambio/.test(s)) return 'cambio';
+  return fallback;
+}
+function normPriority(v){
+  if(!v) return null;
+  const s = v.toUpperCase().trim();
+  if(['P1','P2','P3','P4'].includes(s)) return s;
+  if(/critical|cr[ií]tic/.test(v)) return 'P1';
+  if(/high|alta/.test(v)) return 'P2';
+  if(/medium|media/.test(v)) return 'P3';
+  if(/low|baja/.test(v)) return 'P4';
+  return null;
+}
+function normLevel(v){
+  if(!v) return null;
+  const s = v.toLowerCase();
+  if(/alto|high/.test(s)) return 'alto';
+  if(/medio|medium/.test(s)) return 'medio';
+  if(/bajo|low/.test(s)) return 'bajo';
+  return null;
+}
+
+function buildImportPayload(row){
+  const m = mapRow(row);
+  const defaultType = document.getElementById('importDefaultType').value;
+  const defaultStatus = document.getElementById('importDefaultStatus').value;
+  const defaultPriority = document.getElementById('importDefaultPriority').value;
+
+  const impact = normLevel(m.impact) || 'medio';
+  const urgency = normLevel(m.urgency) || 'medio';
+  const priority = normPriority(m.priority) || (m.impact||m.urgency ? calcPriority(impact,urgency) : defaultPriority);
+
+  return {
+    external_ref: m.external_ref || null,
+    external_source: 'HaloITSM',
+    ticket_type: normType(m.ticket_type, defaultType),
+    title: m.title || '(Sin título)',
+    description: m.description || null,
+    client_name: m.client_name || null,
+    status: normStatus(m.status, defaultStatus),
+    priority, impact, urgency,
+    agent_name: m.agent_name || null,
+    reported_by: m.reported_by || null,
+    created_at: parseImportDate(m.created_at),
+    resolved_at: parseImportDate(m.resolved_at),
+    closed_at: parseImportDate(m.closed_at),
+  };
+}
+
+function renderImportPreview(){
+  document.getElementById('importTotalRows').textContent = importState.rows.length;
+  const cols = ['external_ref','ticket_type','title','client_name','status','priority','agent_name','created_at'];
+  const thead = document.querySelector('#importPreviewTable thead');
+  const tbody = document.querySelector('#importPreviewTable tbody');
+  thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
+  const preview = importState.rows.slice(0,8).map(buildImportPayload);
+  tbody.innerHTML = preview.map(p=>'<tr>'+cols.map(c=>`<td>${escapeHtml(p[c]??'')}</td>`).join('')+'</tr>').join('');
+  document.getElementById('importPreviewPanel').style.display = 'block';
+}
+
+document.getElementById('btnCancelImport').addEventListener('click', ()=>{
+  document.getElementById('importPreviewPanel').style.display = 'none';
+});
+
+document.getElementById('btnConfirmImport').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btnConfirmImport');
+  btn.disabled = true; btn.textContent = 'Importando...';
+  const progressEl = document.getElementById('importProgress');
+  try{
+    const payloads = importState.rows.map(buildImportPayload);
+
+    // resolver/crear clientes por nombre
+    const clientCache = new Map(STATE.clients.map(c=>[c.name.toLowerCase(), c.id]));
+    const uniqueClientNames = [...new Set(payloads.map(p=>p.client_name).filter(Boolean))];
+    let clientsCreated = 0;
+    for(const name of uniqueClientNames){
+      if(!clientCache.has(name.toLowerCase())){
+        const {data, error} = await sb.from('clients').insert({name}).select().single();
+        if(!error && data){ clientCache.set(name.toLowerCase(), data.id); clientsCreated++; }
+      }
+    }
+    // resolver agentes por nombre o correo (solo coincidencias existentes; no se crean cuentas)
+    const agentCache = new Map();
+    STATE.agents.forEach(a=>{
+      agentCache.set(a.full_name.toLowerCase(), a.id);
+      agentCache.set(a.email.toLowerCase(), a.id);
+    });
+
+    const rowsToInsert = payloads.map(p=>({
+      external_ref: p.external_ref,
+      external_source: p.external_source,
+      ticket_type: p.ticket_type,
+      title: p.title,
+      description: p.description,
+      client_id: p.client_name ? (clientCache.get(p.client_name.toLowerCase()) || null) : null,
+      status: p.status,
+      impact: p.impact,
+      urgency: p.urgency,
+      assigned_agent_id: p.agent_name ? (agentCache.get(p.agent_name.toLowerCase()) || null) : null,
+      reported_by: p.reported_by,
+      created_by_agent_id: STATE.agent.id,
+      created_at: p.created_at || undefined,
+      resolved_at: p.resolved_at || null,
+      closed_at: p.closed_at || null,
+      source: 'portal',
+    }));
+
+    const CHUNK = 200;
+    let inserted = 0;
+    let insertedRows = [];
+    for(let i=0; i<rowsToInsert.length; i+=CHUNK){
+      const chunk = rowsToInsert.slice(i, i+CHUNK);
+      const {data, error} = await sb.from('tickets').insert(chunk).select('id, sla_resolution_due, resolved_at');
+      if(error){ throw error; }
+      insertedRows = insertedRows.concat(data);
+      inserted += data.length;
+      progressEl.textContent = `Importados ${inserted} de ${rowsToInsert.length}...`;
+    }
+
+    // marcar incumplimiento de SLA para tickets históricos ya resueltos
+    const breachIds = insertedRows.filter(r=>r.resolved_at && r.sla_resolution_due && new Date(r.resolved_at) > new Date(r.sla_resolution_due)).map(r=>r.id);
+    if(breachIds.length){
+      await sb.from('tickets').update({sla_resolution_breached:true}).in('id', breachIds);
+    }
+
+    progressEl.textContent = `Listo: ${inserted} tickets importados, ${clientsCreated} clientes nuevos creados.`;
+    toast(`Importación completa: ${inserted} tickets`);
+    await loadAll();
+  }catch(err){
+    toast('Error en la importación: '+err.message);
+    progressEl.textContent = 'La importación se detuvo por un error: '+err.message;
+  }finally{
+    btn.disabled = false; btn.textContent = 'Importar todos los tickets';
+  }
 });
 
 /* =========================================================
