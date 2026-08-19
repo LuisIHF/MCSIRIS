@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NOC Ticketing — Gestión de Incidentes y Solicitudes</title>
+<title>MCSIRIS-ITSM — Gestión de Incidentes y Solicitudes</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -270,7 +270,7 @@ label.req::after{content:' *';color:var(--danger);}
 <!-- ============ LOGIN ============ -->
 <div id="loginScreen">
   <div class="login-card">
-    <div class="login-brand"><span class="dot"></span><span>NOC Ticketing</span></div>
+    <div class="login-brand"><span class="dot"></span><span>MCSIRIS-ITSM</span></div>
     <h1 id="loginTitle">Iniciar sesión</h1>
     <p class="sub" id="loginSub">Gestión de incidentes, solicitudes, problemas y cambios</p>
     <div id="loginError" class="login-error" style="display:none;"></div>
@@ -298,15 +298,15 @@ label.req::after{content:' *';color:var(--danger);}
 <div id="app">
 <div class="shell">
   <div class="sidebar">
-    <div class="sb-brand"><span class="dot"></span><b>NOC TICKETING</b></div>
+    <div class="sb-brand"><span class="dot"></span><b>MCSIRIS-ITSM</b></div>
     <div class="sb-nav">
       <div class="sb-item active" data-view="dashboard"><span class="ic">◆</span>Dashboard</div>
       <div class="sb-item" data-view="tickets"><span class="ic">▤</span>Tickets<span class="badge-count" id="navOpenCount" style="display:none;"></span></div>
-      <div class="sb-section-label">Configuración</div>
-      <div class="sb-item" data-view="clients"><span class="ic">◈</span>Clientes</div>
+      <div class="sb-section-label" id="sbConfigLabel">Configuración</div>
+      <div class="sb-item" data-view="clients" data-admin-only="1"><span class="ic">◈</span>Clientes</div>
       <div class="sb-item" data-view="templates"><span class="ic">▥</span>Plantillas</div>
-      <div class="sb-item" data-view="sla"><span class="ic">◷</span>Políticas SLA</div>
-      <div class="sb-item" data-view="agents"><span class="ic">◍</span>Agentes</div>
+      <div class="sb-item" data-view="sla" data-admin-only="1"><span class="ic">◷</span>Políticas SLA</div>
+      <div class="sb-item" data-view="agents" data-admin-only="1"><span class="ic">◍</span>Agentes</div>
       <div class="sb-section-label">Análisis</div>
       <div class="sb-item" data-view="reports"><span class="ic">◫</span>Reportes / KPIs</div>
     </div>
@@ -761,8 +761,23 @@ async function afterAuth(user){
   document.getElementById('sbUserName').textContent = agentRow.full_name;
   document.getElementById('sbUserRole').textContent = ROLE_LABELS[agentRow.role] || agentRow.role;
   document.getElementById('sbAvatar').textContent = initials(agentRow.full_name);
+  applyRolePermissions(agentRow.role);
   await loadAll();
   startSlaTicker();
+}
+
+function applyRolePermissions(role){
+  const isAdmin = role === 'admin';
+  // Ocultar del menú lateral las secciones exclusivas de administrador
+  document.querySelectorAll('.sb-item[data-admin-only]').forEach(el=>{ el.style.display = isAdmin ? 'flex' : 'none'; });
+  const anyAdminVisible = isAdmin;
+  document.getElementById('sbConfigLabel').style.display = anyAdminVisible ? 'block' : 'none';
+
+  // Bloquear botones de crear/editar en Clientes y SLA para no-admin
+  const btnNewClient = document.getElementById('btnNewClient');
+  const btnNewSla = document.getElementById('btnNewSla');
+  if(btnNewClient) btnNewClient.style.display = isAdmin ? 'inline-flex' : 'none';
+  if(btnNewSla) btnNewSla.style.display = isAdmin ? 'inline-flex' : 'none';
 }
 
 document.getElementById('logoutBtn').addEventListener('click', async ()=>{
@@ -802,6 +817,11 @@ document.querySelectorAll('[data-view-link]').forEach(a=>{
   a.addEventListener('click', (e)=>{e.preventDefault(); switchView(a.dataset.viewLink);});
 });
 function switchView(view){
+  const adminOnlyViews = ['clients','sla','agents'];
+  if(adminOnlyViews.includes(view) && STATE.agent?.role !== 'admin'){
+    toast('Solo un administrador puede acceder a esta sección');
+    view = 'dashboard';
+  }
   document.querySelectorAll('.sb-item[data-view]').forEach(i=>i.classList.toggle('active', i.dataset.view===view));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+view).classList.add('active');
@@ -1268,6 +1288,7 @@ async function addTicketComment(ticketId){
 ========================================================= */
 function renderClients(){
   const wrap = document.getElementById('clientsList');
+  const isAdmin = STATE.agent?.role === 'admin';
   if(STATE.clients.length===0){ wrap.innerHTML = '<div class="empty-state"><div class="big">◈</div><p><strong>Aún no hay clientes</strong></p><p>Agrega tu primer cliente para vincularlo a los tickets.</p></div>'; return; }
   wrap.innerHTML = STATE.clients.map(c=>`
     <div class="client-card">
@@ -1276,9 +1297,7 @@ function renderClients(){
         <p>Contrato: ${c.contract_level} · Contacto: ${c.contact_name||'—'} ${c.contact_phone? '· '+c.contact_phone:''}</p>
         <p>${c.contact_email||''}</p>
       </div>
-      <div style="display:flex;gap:6px;">
-        <button class="btn btn-ghost btn-sm" onclick="editClient('${c.id}')">Editar</button>
-      </div>
+      ${isAdmin ? `<div style="display:flex;gap:6px;"><button class="btn btn-ghost btn-sm" onclick="editClient('${c.id}')">Editar</button></div>` : ''}
     </div>`).join('');
 }
 function editClient(id){
@@ -1405,6 +1424,7 @@ document.getElementById('submitTemplate').addEventListener('click', async ()=>{
 ========================================================= */
 function renderSla(){
   const tbody = document.querySelector('#slaTable tbody');
+  const isAdmin = STATE.agent?.role === 'admin';
   if(STATE.slaPolicies.length===0){ tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px;">Sin políticas configuradas</td></tr>'; return; }
   tbody.innerHTML = STATE.slaPolicies.map(p=>`
     <tr>
@@ -1413,7 +1433,7 @@ function renderSla(){
       <td>${p.response_minutes} min</td>
       <td>${p.resolution_minutes} min</td>
       <td>${p.business_hours_only ? 'Horario laboral' : '24x7'}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="deleteSla('${p.id}')">Eliminar</button></td>
+      <td>${isAdmin ? `<button class="btn btn-ghost btn-sm" onclick="deleteSla('${p.id}')">Eliminar</button>` : ''}</td>
     </tr>`).join('');
 }
 async function deleteSla(id){
