@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NOC Ticketing — Gestión de Incidentes y Solicitudes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#F4F6F9;
+  --surface:#FFFFFF;
+  --surface-2:#FAFBFC;
+  --border:#E3E8EF;
+  --text:#101828;
+  --text-2:#475467;
+  --text-3:#98A2B3;
+  --primary:#2454C7;
+  --primary-dark:#1B3F9E;
+  --primary-light:#EAF0FF;
+  --success:#0F9D58;
+  --success-bg:#E7F7EE;
+  --warning:#B5650A;
+  --warning-bg:#FFF3E0;
+  --danger:#C0261F;
+  --danger-bg:#FDEBEA;
+  --slate:#5B6472;
+  --slate-bg:#EEF1F4;
+  --p1:#C0261F;
+  --p2:#C6660F;
+  --p3:#B58900;
+  --p4:#5B6472;
+  --radius:10px;
+  --radius-sm:6px;
+  --shadow-sm:0 1px 2px rgba(16,24,40,.06);
+  --shadow-md:0 4px 12px rgba(16,24,40,.08);
+  --font-ui:'IBM Plex Sans',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  font-family:var(--font-ui);
+  background:var(--bg);
+  color:var(--text);
+  font-size:14px;
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;font-size:14px;}
+::selection{background:var(--primary-light);}
+
+/* ---------- SCROLLBAR ---------- */
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:#D0D5DD;border-radius:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+
+/* ---------- LOGIN ---------- */
+#loginScreen{
+  min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:
+    radial-gradient(circle at 15% 20%, #EAF0FF 0%, transparent 45%),
+    radial-gradient(circle at 85% 80%, #EAF0FF 0%, transparent 45%),
+    var(--bg);
+}
+.login-card{
+  width:380px;background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;padding:36px 32px;box-shadow:var(--shadow-md);
+}
+.login-brand{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+.login-brand .dot{width:10px;height:10px;border-radius:50%;background:var(--success);box-shadow:0 0 0 3px var(--success-bg);}
+.login-brand span{font-family:var(--font-mono);font-weight:600;letter-spacing:.04em;font-size:13px;color:var(--text-2);text-transform:uppercase;}
+.login-card h1{font-size:20px;margin:8px 0 2px;font-weight:700;}
+.login-card p.sub{color:var(--text-2);font-size:13px;margin:0 0 22px;}
+.field{margin-bottom:14px;}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--text-2);margin-bottom:5px;}
+.field input,.field select,.field textarea{
+  width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:var(--radius-sm);
+  background:var(--surface-2);color:var(--text);outline:none;transition:border-color .12s;
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);background:var(--surface);}
+.btn{
+  border:none;border-radius:var(--radius-sm);padding:9px 16px;font-weight:600;font-size:13.5px;
+  display:inline-flex;align-items:center;gap:6px;justify-content:center;transition:background .12s, transform .05s;
+}
+.btn:active{transform:scale(.98);}
+.btn-primary{background:var(--primary);color:#fff;}
+.btn-primary:hover{background:var(--primary-dark);}
+.btn-ghost{background:transparent;color:var(--text-2);border:1px solid var(--border);}
+.btn-ghost:hover{background:var(--surface-2);}
+.btn-danger{background:var(--danger-bg);color:var(--danger);}
+.btn-danger:hover{background:#F9D6D3;}
+.btn-block{width:100%;}
+.btn-sm{padding:6px 10px;font-size:12.5px;}
+.login-toggle{margin-top:16px;text-align:center;font-size:13px;color:var(--text-2);}
+.login-toggle a{color:var(--primary);font-weight:600;cursor:pointer;text-decoration:none;}
+.login-error{background:var(--danger-bg);color:var(--danger);font-size:12.5px;padding:8px 10px;border-radius:var(--radius-sm);margin-bottom:14px;}
+.login-note{background:var(--slate-bg);color:var(--text-2);font-size:12px;padding:10px 12px;border-radius:var(--radius-sm);margin-top:18px;line-height:1.5;}
+
+/* ---------- APP SHELL ---------- */
+#app{display:none;min-height:100vh;}
+.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh;}
+.sidebar{
+  background:#101828;color:#fff;padding:18px 14px;display:flex;flex-direction:column;
+  position:sticky;top:0;height:100vh;
+}
+.sb-brand{display:flex;align-items:center;gap:9px;padding:6px 8px 20px;}
+.sb-brand .dot{width:9px;height:9px;border-radius:50%;background:#34D399;box-shadow:0 0 0 3px rgba(52,211,153,.18);}
+.sb-brand b{font-family:var(--font-mono);font-size:13px;letter-spacing:.05em;}
+.sb-nav{display:flex;flex-direction:column;gap:2px;flex:1;}
+.sb-item{
+  display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;color:#CBD3E0;
+  font-size:13.5px;font-weight:500;cursor:pointer;transition:background .12s,color .12s;
+}
+.sb-item:hover{background:#1D2839;color:#fff;}
+.sb-item.active{background:var(--primary);color:#fff;}
+.sb-item .ic{width:16px;text-align:center;opacity:.9;font-family:var(--font-mono);font-size:12px;}
+.sb-section-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:#5B6472;margin:16px 8px 6px;font-weight:600;}
+.sb-foot{border-top:1px solid #1D2839;padding-top:12px;margin-top:10px;}
+.sb-user{display:flex;align-items:center;gap:8px;padding:6px 8px;}
+.sb-avatar{width:28px;height:28px;border-radius:50%;background:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;}
+.sb-user-meta{flex:1;min-width:0;}
+.sb-user-meta .nm{font-size:12.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-user-meta .rl{font-size:11px;color:#8B93A3;}
+.sb-logout{background:none;border:none;color:#8B93A3;font-size:16px;padding:4px;}
+.sb-logout:hover{color:#fff;}
+
+.main{padding:22px 28px 60px;overflow-x:hidden;}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
+.topbar h2{font-size:19px;margin:0;font-weight:700;}
+.topbar .sub{font-size:12.5px;color:var(--text-2);margin-top:2px;}
+.topbar-actions{display:flex;gap:8px;}
+
+.view{display:none;}
+.view.active{display:block;}
+
+/* ---------- KPI CARDS ---------- */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;}
+.kpi-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;}
+.kpi-card .lbl{font-size:11.5px;color:var(--text-2);font-weight:600;text-transform:uppercase;letter-spacing:.03em;}
+.kpi-card .val{font-family:var(--font-mono);font-size:28px;font-weight:600;margin-top:6px;}
+.kpi-card .delta{font-size:11.5px;margin-top:4px;color:var(--text-3);}
+.kpi-card.accent-danger .val{color:var(--danger);}
+.kpi-card.accent-primary .val{color:var(--primary);}
+.kpi-card.accent-success .val{color:var(--success);}
+.kpi-card.accent-warning .val{color:var(--warning);}
+
+.grid-2{display:grid;grid-template-columns:1.3fr .9fr;gap:16px;}
+@media(max-width:1000px){.grid-2{grid-template-columns:1fr;}}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px;}
+.panel h3{margin:0 0 14px;font-size:14.5px;font-weight:700;}
+.panel-flex{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+
+/* ---------- TABLE ---------- */
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th{
+  text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-3);
+  font-weight:600;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;
+}
+td{padding:10px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tbody tr{cursor:pointer;transition:background .1s;}
+tbody tr:hover{background:var(--surface-2);}
+.ticket-id{font-family:var(--font-mono);font-weight:600;color:var(--primary);font-size:12.5px;}
+
+.pill{
+  display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;
+  font-size:11.5px;font-weight:600;white-space:nowrap;
+}
+.pill-p1{background:var(--danger-bg);color:var(--p1);}
+.pill-p2{background:#FDF0E4;color:var(--p2);}
+.pill-p3{background:#FBF3D6;color:var(--p3);}
+.pill-p4{background:var(--slate-bg);color:var(--p4);}
+.pill-type-incidente{background:var(--danger-bg);color:var(--danger);}
+.pill-type-solicitud{background:var(--primary-light);color:var(--primary);}
+.pill-type-problema{background:#F1E8FF;color:#6D28D9;}
+.pill-type-cambio{background:#E4F6EE;color:var(--success);}
+.pill-status{background:var(--slate-bg);color:var(--text-2);}
+.pill-status.st-nuevo{background:var(--primary-light);color:var(--primary);}
+.pill-status.st-en_progreso,.pill-status.st-asignado{background:var(--warning-bg);color:var(--warning);}
+.pill-status.st-resuelto,.pill-status.st-cerrado,.pill-status.st-implementado,.pill-status.st-aprobado{background:var(--success-bg);color:var(--success);}
+.pill-status.st-cancelado,.pill-status.st-rechazado{background:var(--danger-bg);color:var(--danger);}
+.sla-chip{font-family:var(--font-mono);font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;}
+.sla-ok{background:var(--success-bg);color:var(--success);}
+.sla-warn{background:var(--warning-bg);color:var(--warning);}
+.sla-breach{background:var(--danger-bg);color:var(--danger);}
+.sla-chip .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+.filters select,.filters input{padding:7px 10px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);font-size:12.5px;}
+.search-input{position:relative;flex:1;min-width:180px;}
+.search-input input{width:100%;padding:7px 10px;}
+
+.empty-state{text-align:center;padding:50px 20px;color:var(--text-3);}
+.empty-state .big{font-size:32px;margin-bottom:8px;}
+.empty-state p{font-size:13px;margin:4px 0;}
+
+/* ---------- MODAL / DRAWER ---------- */
+.overlay{position:fixed;inset:0;background:rgba(16,24,40,.45);display:none;align-items:stretch;justify-content:flex-end;z-index:100;}
+.overlay.active{display:flex;}
+.drawer{width:560px;max-width:94vw;background:var(--surface);height:100vh;overflow-y:auto;box-shadow:-8px 0 24px rgba(16,24,40,.15);animation:slideIn .18s ease-out;}
+@keyframes slideIn{from{transform:translateX(30px);opacity:.6;}to{transform:translateX(0);opacity:1;}}
+.drawer-head{position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;z-index:2;}
+.drawer-head h3{margin:0;font-size:15.5px;}
+.drawer-close{background:none;border:none;font-size:20px;color:var(--text-3);line-height:1;}
+.drawer-close:hover{color:var(--text);}
+.drawer-body{padding:20px 22px 60px;}
+
+.modal-center{position:fixed;inset:0;background:rgba(16,24,40,.45);display:none;align-items:center;justify-content:center;z-index:100;padding:20px;}
+.modal-center.active{display:flex;}
+.modal-box{background:var(--surface);border-radius:14px;max-width:640px;width:100%;max-height:88vh;overflow-y:auto;box-shadow:var(--shadow-md);}
+.modal-head{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.modal-head h3{margin:0;font-size:15.5px;}
+.modal-body{padding:20px 22px;}
+.modal-foot{padding:16px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
+
+.row-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+@media(max-width:520px){.row-2,.row-3{grid-template-columns:1fr;}}
+
+.detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-bottom:18px;}
+.detail-grid .dg-item .k{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.03em;margin-bottom:3px;}
+.detail-grid .dg-item .v{font-size:13px;font-weight:600;}
+.desc-box{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 14px;font-size:13px;white-space:pre-wrap;line-height:1.55;margin-bottom:16px;}
+
+.tab-strip{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px;}
+.tab-btn{background:none;border:none;padding:8px 4px;margin-right:16px;font-size:13px;font-weight:600;color:var(--text-3);border-bottom:2px solid transparent;}
+.tab-btn.active{color:var(--primary);border-color:var(--primary);}
+
+.checklist-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;font-size:13px;}
+.checklist-item input{margin-top:2px;}
+
+.comment{border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;margin-bottom:8px;background:var(--surface-2);}
+.comment .meta{font-size:11px;color:var(--text-3);margin-bottom:4px;display:flex;justify-content:space-between;}
+.comment .body{font-size:13px;white-space:pre-wrap;}
+.comment.internal{border-left:3px solid var(--warning);}
+.comment.external{border-left:3px solid var(--primary);}
+
+.badge-count{background:var(--danger);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;margin-left:auto;}
+
+.toast-wrap{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;}
+.toast{background:#101828;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;box-shadow:var(--shadow-md);animation:toastIn .15s ease-out;}
+@keyframes toastIn{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+
+.template-card{border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:border-color .12s,background .12s;}
+.template-card:hover{border-color:var(--primary);background:var(--primary-light);}
+.template-card .tc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;}
+.template-card .tc-title{font-weight:600;font-size:13.5px;}
+.template-card .tc-desc{font-size:12px;color:var(--text-2);}
+
+.client-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;}
+.client-card h4{margin:0 0 4px;font-size:14px;}
+.client-card p{margin:2px 0;font-size:12.5px;color:var(--text-2);}
+
+.hint{font-size:11.5px;color:var(--text-3);margin-top:3px;}
+label.req::after{content:' *';color:var(--danger);}
+
+.chart-wrap{position:relative;height:220px;}
+
+@media(max-width:880px){
+  .shell{grid-template-columns:1fr;}
+  .sidebar{display:none;}
+  .main{padding:16px;}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN ============ -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-brand"><span class="dot"></span><span>NOC Ticketing</span></div>
+    <h1 id="loginTitle">Iniciar sesión</h1>
+    <p class="sub" id="loginSub">Gestión de incidentes, solicitudes, problemas y cambios</p>
+    <div id="loginError" class="login-error" style="display:none;"></div>
+    <form id="loginForm">
+      <div class="field" id="fieldName" style="display:none;">
+        <label>Nombre completo</label>
+        <input type="text" id="loginName" placeholder="Ej. Luis Hernández">
+      </div>
+      <div class="field">
+        <label>Correo</label>
+        <input type="email" id="loginEmail" placeholder="tucorreo@mcsnetwork.com" required>
+      </div>
+      <div class="field">
+        <label>Contraseña</label>
+        <input type="password" id="loginPassword" placeholder="••••••••" required>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit" id="loginSubmitBtn">Entrar</button>
+    </form>
+    <div class="login-toggle" id="loginToggle">¿Tienes una invitación pendiente? <a id="toggleToSignup">Activar mi cuenta</a></div>
+    <div class="login-note">El acceso es solo por invitación: un administrador da de alta tu nombre, correo y rol, y tú activas tu cuenta poniendo tu propia contraseña aquí.</div>
+  </div>
+</div>
+
+<!-- ============ APP ============ -->
+<div id="app">
+<div class="shell">
+  <div class="sidebar">
+    <div class="sb-brand"><span class="dot"></span><b>NOC TICKETING</b></div>
+    <div class="sb-nav">
+      <div class="sb-item active" data-view="dashboard"><span class="ic">◆</span>Dashboard</div>
+      <div class="sb-item" data-view="tickets"><span class="ic">▤</span>Tickets<span class="badge-count" id="navOpenCount" style="display:none;"></span></div>
+      <div class="sb-section-label">Configuración</div>
+      <div class="sb-item" data-view="clients"><span class="ic">◈</span>Clientes</div>
+      <div class="sb-item" data-view="templates"><span class="ic">▥</span>Plantillas</div>
+      <div class="sb-item" data-view="sla"><span class="ic">◷</span>Políticas SLA</div>
+      <div class="sb-item" data-view="agents"><span class="ic">◍</span>Agentes</div>
+      <div class="sb-section-label">Análisis</div>
+      <div class="sb-item" data-view="reports"><span class="ic">◫</span>Reportes / KPIs</div>
+    </div>
+    <div class="sb-foot">
+      <div class="sb-user">
+        <div class="sb-avatar" id="sbAvatar">?</div>
+        <div class="sb-user-meta">
+          <div class="nm" id="sbUserName">—</div>
+          <div class="rl" id="sbUserRole">agente</div>
+        </div>
+        <button class="sb-logout" id="changePasswordBtn" title="Cambiar contraseña">🔑</button>
+        <button class="sb-logout" id="logoutBtn" title="Cerrar sesión">⏻</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- ================= DASHBOARD ================= -->
+    <div class="view active" id="view-dashboard">
+      <div class="topbar">
+        <div>
+          <h2>Dashboard</h2>
+          <div class="sub" id="dashDate"></div>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-primary" id="btnNewTicketDash">+ Nuevo ticket</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid" id="kpiGrid"></div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-flex"><h3>Tickets recientes</h3><a href="#" class="btn btn-ghost btn-sm" data-view-link="tickets">Ver todos</a></div>
+          <table id="recentTicketsTable"><thead><tr><th>Folio</th><th>Título</th><th>Cliente</th><th>Prioridad</th><th>Estado</th><th>SLA</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div>
+          <div class="panel">
+            <h3>Cumplimiento SLA (30 días)</h3>
+            <div class="chart-wrap"><canvas id="chartSlaGauge"></canvas></div>
+          </div>
+          <div class="panel">
+            <h3>Tickets por tipo (abiertos)</h3>
+            <div class="chart-wrap"><canvas id="chartByType"></canvas></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= TICKETS ================= -->
+    <div class="view" id="view-tickets">
+      <div class="topbar">
+        <div><h2>Tickets</h2><div class="sub">Incidentes, solicitudes, problemas y cambios</div></div>
+        <div class="topbar-actions"><button class="btn btn-primary" id="btnNewTicket">+ Nuevo ticket</button></div>
+      </div>
+      <div class="panel">
+        <div class="filters">
+          <div class="search-input"><input type="text" id="fSearch" placeholder="Buscar por folio, título o cliente..."></div>
+          <select id="fType"><option value="">Todos los tipos</option><option value="incidente">Incidente</option><option value="solicitud">Solicitud</option><option value="problema">Problema</option><option value="cambio">Cambio</option></select>
+          <select id="fStatus"><option value="">Todos los estados</option></select>
+          <select id="fPriority"><option value="">Toda prioridad</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option><option value="P4">P4</option></select>
+          <select id="fClient"><option value="">Todos los clientes</option></select>
+          <select id="fAgent"><option value="">Todos los agentes</option></select>
+        </div>
+        <table id="ticketsTable"><thead><tr><th>Folio</th><th>Tipo</th><th>Título</th><th>Cliente</th><th>Prioridad</th><th>Estado</th><th>Agente</th><th>SLA resolución</th><th>Creado</th></tr></thead><tbody></tbody></table>
+        <div class="empty-state" id="ticketsEmpty" style="display:none;">
+          <div class="big">▤</div><p><strong>No hay tickets que coincidan</strong></p><p>Ajusta los filtros o crea un nuevo ticket.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= CLIENTES ================= -->
+    <div class="view" id="view-clients">
+      <div class="topbar">
+        <div><h2>Clientes</h2><div class="sub">Empresas y sitios atendidos por el NOC</div></div>
+        <div class="topbar-actions"><button class="btn btn-primary" id="btnNewClient">+ Nuevo cliente</button></div>
+      </div>
+      <div id="clientsList"></div>
+    </div>
+
+    <!-- ================= PLANTILLAS ================= -->
+    <div class="view" id="view-templates">
+      <div class="topbar">
+        <div><h2>Plantillas</h2><div class="sub">Plantillas predeterminadas para creación rápida de tickets</div></div>
+        <div class="topbar-actions"><button class="btn btn-primary" id="btnNewTemplate">+ Nueva plantilla</button></div>
+      </div>
+      <div class="tab-strip" id="templateTabs">
+        <button class="tab-btn active" data-ttype="">Todas</button>
+        <button class="tab-btn" data-ttype="incidente">Incidentes</button>
+        <button class="tab-btn" data-ttype="solicitud">Solicitudes</button>
+        <button class="tab-btn" data-ttype="problema">Problemas</button>
+        <button class="tab-btn" data-ttype="cambio">Cambios</button>
+      </div>
+      <div id="templatesList"></div>
+    </div>
+
+    <!-- ================= SLA ================= -->
+    <div class="view" id="view-sla">
+      <div class="topbar">
+        <div><h2>Políticas SLA</h2><div class="sub">Tiempos de respuesta y resolución por prioridad</div></div>
+        <div class="topbar-actions"><button class="btn btn-primary" id="btnNewSla">+ Nueva política</button></div>
+      </div>
+      <div class="panel">
+        <table id="slaTable"><thead><tr><th>Cliente</th><th>Prioridad</th><th>Respuesta</th><th>Resolución</th><th>Horario</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <!-- ================= AGENTES ================= -->
+    <div class="view" id="view-agents">
+      <div class="topbar">
+        <div><h2>Agentes</h2><div class="sub">Agentes NOC y especialistas con acceso al panel</div></div>
+      </div>
+
+      <div class="panel" id="adminAgentsPanel" style="display:none;">
+        <div class="panel-flex"><h3>Administrar cuentas</h3><button class="btn btn-primary btn-sm" id="btnNewInvite">+ Invitar agente</button></div>
+        <table id="adminAgentsTable"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Especialidad</th><th>Estado</th><th>Activo</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+
+      <div class="panel" id="notAdminNotice" style="display:none;">
+        <p class="hint">Solo un administrador puede cambiar roles o desactivar cuentas. Si necesitas ser promovido a administrador, pide a quien configuró el sistema que actualice tu cuenta.</p>
+      </div>
+
+      <div class="panel">
+        <h3>Carga de trabajo</h3>
+        <table id="agentsTable"><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Tickets abiertos</th><th>Resueltos</th><th>SLA incumplidos</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <p class="hint">El acceso es solo por invitación: crea aquí el nombre, correo y rol de cada agente; ellos activan su cuenta poniendo su propia contraseña en la pantalla de inicio de sesión, opción "Activar mi cuenta".</p>
+      </div>
+    </div>
+
+    <!-- ================= REPORTES ================= -->
+    <div class="view" id="view-reports">
+      <div class="topbar"><div><h2>Reportes / KPIs</h2><div class="sub">Desempeño del NOC por agente y por cliente</div></div></div>
+      <div class="panel">
+        <h3>Desempeño por agente</h3>
+        <table id="reportAgentTable"><thead><tr><th>Agente</th><th>Abiertos</th><th>Resueltos</th><th>Horas prom. resolución</th><th>SLA incumplidos</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h3>Desempeño por cliente</h3>
+        <table id="reportClientTable"><thead><tr><th>Cliente</th><th>Total tickets</th><th>Abiertos</th><th>% cumplimiento SLA</th><th>SLA incumplidos</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- ============ DRAWER: DETALLE DE TICKET ============ -->
+<div class="overlay" id="ticketDrawerOverlay">
+  <div class="drawer">
+    <div class="drawer-head">
+      <h3 id="drawerTicketNumber">—</h3>
+      <button class="drawer-close" id="closeTicketDrawer">×</button>
+    </div>
+    <div class="drawer-body" id="drawerBody"></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: NUEVO TICKET ============ -->
+<div class="modal-center" id="newTicketModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Nuevo ticket</h3><button class="drawer-close" id="closeNewTicketModal">×</button></div>
+    <div class="modal-body" id="newTicketBody">
+      <div class="tab-strip" id="newTicketTypeTabs">
+        <button class="tab-btn active" data-ntype="incidente">Incidente</button>
+        <button class="tab-btn" data-ntype="solicitud">Solicitud</button>
+        <button class="tab-btn" data-ntype="problema">Problema</button>
+        <button class="tab-btn" data-ntype="cambio">Cambio</button>
+      </div>
+      <div id="templatePicker" style="margin-bottom:16px;"></div>
+      <div class="field"><label class="req">Título</label><input type="text" id="ntTitle" placeholder="Ej. Enlace caído - Sucursal Centro"></div>
+      <div class="row-2">
+        <div class="field"><label>Cliente</label><select id="ntClient"><option value="">Sin asignar</option></select></div>
+        <div class="field"><label>Categoría</label><select id="ntCategory"><option value="">—</option></select></div>
+      </div>
+      <div class="row-3">
+        <div class="field"><label>Impacto</label><select id="ntImpact"><option value="alto">Alto</option><option value="medio" selected>Medio</option><option value="bajo">Bajo</option></select></div>
+        <div class="field"><label>Urgencia</label><select id="ntUrgency"><option value="alto">Alto</option><option value="medio" selected>Medio</option><option value="bajo">Bajo</option></select></div>
+        <div class="field"><label>Prioridad (auto)</label><input type="text" id="ntPriorityPreview" disabled></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label>Origen</label><select id="ntSource">
+          <option value="monitoreo_prtg">Monitoreo PRTG</option><option value="telefono">Teléfono</option><option value="email">Email</option>
+          <option value="whatsapp">WhatsApp</option><option value="portal">Portal</option><option value="chat">Chat</option><option value="presencial">Presencial</option>
+        </select></div>
+        <div class="field"><label>Reportado por</label><input type="text" id="ntReportedBy" placeholder="Nombre de quien reporta"></div>
+      </div>
+      <div class="field" id="ntAssignWrap"><label>Asignar a</label><select id="ntAssign"><option value="">Sin asignar</option></select></div>
+      <div class="field"><label>Descripción</label><textarea id="ntDescription" rows="7"></textarea></div>
+      <div id="ntChangeFields" style="display:none;">
+        <div class="row-2">
+          <div class="field"><label>Tipo de cambio</label><select id="ntChangeType"><option value="normal">Normal</option><option value="estandar">Estándar</option><option value="emergencia">Emergencia</option></select></div>
+          <div class="field"><label>Riesgo</label><select id="ntChangeRisk"><option value="bajo">Bajo</option><option value="medio">Medio</option><option value="alto">Alto</option></select></div>
+        </div>
+        <div class="row-2">
+          <div class="field"><label>Inicio programado</label><input type="datetime-local" id="ntSchedStart"></div>
+          <div class="field"><label>Fin programado</label><input type="datetime-local" id="ntSchedEnd"></div>
+        </div>
+        <div class="field"><label>Plan de rollback</label><textarea id="ntRollback" rows="3"></textarea></div>
+      </div>
+      <div id="ntChecklistPreview"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="cancelNewTicket">Cancelar</button>
+      <button class="btn btn-primary" id="submitNewTicket">Crear ticket</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: CLIENTE ============ -->
+<div class="modal-center" id="clientModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 id="clientModalTitle">Nuevo cliente</h3><button class="drawer-close" id="closeClientModal">×</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="clId">
+      <div class="field"><label class="req">Nombre</label><input type="text" id="clName"></div>
+      <div class="row-2">
+        <div class="field"><label>Nombre corto</label><input type="text" id="clShort"></div>
+        <div class="field"><label>Nivel de contrato</label><select id="clLevel"><option value="estandar">Estándar</option><option value="premium">Premium</option><option value="24x7">24x7</option></select></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label>Contacto</label><input type="text" id="clContactName"></div>
+        <div class="field"><label>Teléfono</label><input type="text" id="clContactPhone"></div>
+      </div>
+      <div class="field"><label>Correo de contacto</label><input type="email" id="clContactEmail"></div>
+      <div class="field"><label>Dirección</label><input type="text" id="clAddress"></div>
+      <div class="field"><label>Notas</label><textarea id="clNotes" rows="3"></textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelClient">Cancelar</button><button class="btn btn-primary" id="submitClient">Guardar</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: PLANTILLA ============ -->
+<div class="modal-center" id="templateModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 id="templateModalTitle">Nueva plantilla</h3><button class="drawer-close" id="closeTemplateModal">×</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="tpId">
+      <div class="row-2">
+        <div class="field"><label class="req">Tipo</label><select id="tpType"><option value="incidente">Incidente</option><option value="solicitud">Solicitud</option><option value="problema">Problema</option><option value="cambio">Cambio</option></select></div>
+        <div class="field"><label>Categoría</label><select id="tpCategory"><option value="">—</option></select></div>
+      </div>
+      <div class="field"><label class="req">Nombre de la plantilla</label><input type="text" id="tpName" placeholder="Ej. Enlace de internet caído"></div>
+      <div class="field"><label>Título sugerido</label><input type="text" id="tpTitleTpl" placeholder="Ej. Enlace caído - {cliente}"></div>
+      <div class="row-2">
+        <div class="field"><label>Impacto por defecto</label><select id="tpImpact"><option value="alto">Alto</option><option value="medio" selected>Medio</option><option value="bajo">Bajo</option></select></div>
+        <div class="field"><label>Urgencia por defecto</label><select id="tpUrgency"><option value="alto">Alto</option><option value="medio" selected>Medio</option><option value="bajo">Bajo</option></select></div>
+      </div>
+      <div class="field"><label>Descripción / guion sugerido</label><textarea id="tpDescTpl" rows="6" placeholder="Datos a levantar, diagnóstico inicial, etc."></textarea></div>
+      <div class="field"><label>Checklist (una acción por línea)</label><textarea id="tpChecklist" rows="5" placeholder="Verificar estado en PRTG&#10;Contactar al proveedor de enlace..."></textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelTemplate">Cancelar</button><button class="btn btn-primary" id="submitTemplate">Guardar plantilla</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: SLA ============ -->
+<div class="modal-center" id="slaModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Nueva política SLA</h3><button class="drawer-close" id="closeSlaModal">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Cliente (vacío = política global)</label><select id="slaClient"><option value="">Global (todos los clientes)</option></select></div>
+      <div class="row-2">
+        <div class="field"><label class="req">Prioridad</label><select id="slaPriority"><option value="P1">P1 — Crítica</option><option value="P2">P2 — Alta</option><option value="P3">P3 — Media</option><option value="P4">P4 — Baja</option></select></div>
+        <div class="field"><label>Solo horario laboral</label><select id="slaBizHours"><option value="false">No (24x7)</option><option value="true">Sí</option></select></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label class="req">Tiempo de respuesta (min)</label><input type="number" id="slaResponse" value="30"></div>
+        <div class="field"><label class="req">Tiempo de resolución (min)</label><input type="number" id="slaResolution" value="480"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelSla">Cancelar</button><button class="btn btn-primary" id="submitSla">Guardar política</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: INVITAR AGENTE ============ -->
+<div class="modal-center" id="inviteModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Invitar agente</h3><button class="drawer-close" id="closeInviteModal">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label class="req">Nombre completo</label><input type="text" id="invName" placeholder="Ej. Ana Torres"></div>
+      <div class="field"><label class="req">Correo</label><input type="email" id="invEmail" placeholder="ana@mcsnetwork.com"></div>
+      <div class="row-2">
+        <div class="field"><label class="req">Rol</label><select id="invRole">
+          <option value="agente_noc">Agente NOC</option>
+          <option value="agente_especialista">Agente especialista</option>
+          <option value="admin">Administrador</option>
+        </select></div>
+        <div class="field"><label>Especialidad (opcional)</label><input type="text" id="invSpecialty" placeholder="Ej. Redes, Seguridad"></div>
+      </div>
+      <p class="hint">Se crea el registro con ese correo. La persona debe ir a la pantalla de inicio de sesión, elegir "Activar mi cuenta" y usar el mismo correo para fijar su propia contraseña.</p>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelInvite">Cancelar</button><button class="btn btn-primary" id="submitInvite">Crear invitación</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: CAMBIAR CONTRASEÑA ============ -->
+<div class="modal-center" id="pwModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Cambiar contraseña</h3><button class="drawer-close" id="closePwModal">×</button></div>
+    <div class="modal-body">
+      <div class="field"><label class="req">Nueva contraseña</label><input type="password" id="pwNew" placeholder="Mínimo 6 caracteres"></div>
+      <div class="field"><label class="req">Confirmar contraseña</label><input type="password" id="pwConfirm"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelPw">Cancelar</button><button class="btn btn-primary" id="submitPw">Actualizar</button></div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* =========================================================
+   CONFIG SUPABASE
+========================================================= */
+const SUPABASE_URL = "https://bgslxcsmujwtvwoevwan.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJnc2x4Y3NtdWp3dHZ3b2V2d2FuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMDQ5MTIsImV4cCI6MjEwMjY4MDkxMn0._hy3WlYzniLNALiC7allQnxZxU-_ZN69ahlLPH5KHEI";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* =========================================================
+   ESTADO GLOBAL
+========================================================= */
+let STATE = {
+  agent: null,
+  clients: [], agents: [], categories: [], templates: [], slaPolicies: [],
+  tickets: [], comments: {},
+  currentTicketId: null,
+  newTicketType: 'incidente',
+  selectedTemplate: null,
+  templateFilterType: '',
+};
+
+const STATUS_LABELS = {
+  nuevo:'Nuevo', asignado:'Asignado', en_progreso:'En progreso', en_espera_cliente:'Espera cliente',
+  en_espera_proveedor:'Espera proveedor', resuelto:'Resuelto', cerrado:'Cerrado', cancelado:'Cancelado',
+  aprobado:'Aprobado', rechazado:'Rechazado', programado:'Programado', implementado:'Implementado'
+};
+const STATUS_BY_TYPE = {
+  incidente: ['nuevo','asignado','en_progreso','en_espera_cliente','en_espera_proveedor','resuelto','cerrado','cancelado'],
+  solicitud: ['nuevo','asignado','en_progreso','en_espera_cliente','resuelto','cerrado','cancelado'],
+  problema: ['nuevo','en_progreso','en_espera_proveedor','resuelto','cerrado','cancelado'],
+  cambio: ['nuevo','en_espera_cliente','aprobado','rechazado','programado','en_progreso','implementado','cerrado','cancelado']
+};
+const TYPE_LABELS = {incidente:'Incidente', solicitud:'Solicitud', problema:'Problema', cambio:'Cambio'};
+const SOURCE_LABELS = {telefono:'Teléfono',email:'Email',portal:'Portal',chat:'Chat',monitoreo_prtg:'Monitoreo PRTG',whatsapp:'WhatsApp',presencial:'Presencial'};
+const ROLE_LABELS = {admin:'Administrador', agente_noc:'Agente NOC', agente_especialista:'Agente especialista'};
+
+function toast(msg){
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = msg;
+  document.getElementById('toastWrap').appendChild(el);
+  setTimeout(()=>el.remove(), 3200);
+}
+function fmtDate(d){ if(!d) return '—'; const dt = new Date(d); return dt.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) + ' ' + dt.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDateShort(d){ if(!d) return '—'; return new Date(d).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'2-digit'}); }
+function initials(name){ if(!name) return '?'; return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+
+/* =========================================================
+   AUTENTICACIÓN
+========================================================= */
+let authMode = 'login';
+document.getElementById('toggleToSignup').addEventListener('click', ()=>{
+  authMode = authMode === 'login' ? 'signup' : 'login';
+  document.getElementById('loginTitle').textContent = authMode==='login' ? 'Iniciar sesión' : 'Activar mi cuenta';
+  document.getElementById('fieldName').style.display = authMode==='signup' ? 'block' : 'none';
+  document.getElementById('loginSubmitBtn').textContent = authMode==='login' ? 'Entrar' : 'Activar cuenta';
+  document.getElementById('loginToggle').innerHTML = authMode==='login'
+    ? '¿Tienes una invitación pendiente? <a id="toggleToSignup2">Activar mi cuenta</a>'
+    : '¿Ya activaste tu cuenta? <a id="toggleToSignup2">Iniciar sesión</a>';
+  document.getElementById('toggleToSignup2').addEventListener('click', ()=>document.getElementById('toggleToSignup').click());
+  document.getElementById('loginError').style.display='none';
+});
+
+document.getElementById('loginForm').addEventListener('submit', async (e)=>{
+  e.preventDefault();
+  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const password = document.getElementById('loginPassword').value;
+  const errBox = document.getElementById('loginError');
+  errBox.style.display='none';
+  const btn = document.getElementById('loginSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Procesando...';
+  try{
+    if(authMode === 'login'){
+      const {data, error} = await sb.auth.signInWithPassword({email, password});
+      if(error) throw error;
+      await afterAuth(data.user);
+    } else {
+      // Validar que exista una invitación pendiente ANTES de crear el usuario
+      const {data: hasInvite, error: inviteErr} = await sb.rpc('check_invite', {p_email: email});
+      if(inviteErr) throw inviteErr;
+      if(!hasInvite){
+        errBox.style.display='block';
+        errBox.style.background='var(--danger-bg)'; errBox.style.color='var(--danger)';
+        errBox.textContent = 'No encontramos una invitación pendiente para ese correo. Pide a tu administrador que te dé de alta primero.';
+        return;
+      }
+      const name = document.getElementById('loginName').value.trim();
+      const {data, error} = await sb.auth.signUp({email, password});
+      if(error) throw error;
+      if(data.session){
+        // vincular la invitación existente a este usuario recién autenticado
+        const patch = {auth_user_id: data.user.id};
+        if(name) patch.full_name = name;
+        await sb.from('agents').update(patch).eq('email', email).is('auth_user_id', null);
+        await afterAuth(data.user);
+      } else {
+        errBox.style.display='block';
+        errBox.style.background='var(--success-bg)'; errBox.style.color='var(--success)';
+        errBox.textContent = 'Cuenta creada. Si tu proyecto requiere confirmación de correo, revisa tu bandeja; si no, ya puedes iniciar sesión.';
+      }
+    }
+  }catch(err){
+    errBox.style.display='block';
+    errBox.style.background='var(--danger-bg)'; errBox.style.color='var(--danger)';
+    errBox.textContent = translateAuthError(err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = authMode==='login' ? 'Entrar' : 'Activar cuenta';
+  }
+});
+
+function translateAuthError(msg){
+  if(/already registered/i.test(msg)) return 'Ese correo ya tiene una cuenta. Intenta iniciar sesión.';
+  if(/invalid login/i.test(msg)) return 'Correo o contraseña incorrectos.';
+  if(/password/i.test(msg) && /6/.test(msg)) return 'La contraseña debe tener al menos 6 caracteres.';
+  return msg;
+}
+
+async function afterAuth(user){
+  // buscar el agente ya vinculado (o vincular por correo si aplica)
+  let {data: agentRow} = await sb.from('agents').select('*').eq('auth_user_id', user.id).maybeSingle();
+  if(!agentRow){
+    let {data: byEmail} = await sb.from('agents').select('*').eq('email', user.email).maybeSingle();
+    if(byEmail && !byEmail.auth_user_id){
+      await sb.from('agents').update({auth_user_id:user.id}).eq('id', byEmail.id);
+      byEmail.auth_user_id = user.id;
+    }
+    agentRow = byEmail;
+  }
+  if(!agentRow){
+    document.getElementById('loginScreen').style.display='flex';
+    document.getElementById('app').style.display='none';
+    const errBox = document.getElementById('loginError');
+    errBox.style.display='block';
+    errBox.style.background='var(--danger-bg)'; errBox.style.color='var(--danger)';
+    errBox.textContent = 'Tu cuenta no tiene una invitación de agente asociada. Contacta a tu administrador.';
+    await sb.auth.signOut();
+    return;
+  }
+  STATE.agent = agentRow;
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('app').style.display='block';
+  document.getElementById('sbUserName').textContent = agentRow.full_name;
+  document.getElementById('sbUserRole').textContent = ROLE_LABELS[agentRow.role] || agentRow.role;
+  document.getElementById('sbAvatar').textContent = initials(agentRow.full_name);
+  await loadAll();
+  startSlaTicker();
+}
+
+document.getElementById('logoutBtn').addEventListener('click', async ()=>{
+  await sb.auth.signOut();
+  location.reload();
+});
+
+document.getElementById('changePasswordBtn').addEventListener('click', ()=>{
+  document.getElementById('pwNew').value=''; document.getElementById('pwConfirm').value='';
+  document.getElementById('pwModal').classList.add('active');
+});
+document.getElementById('closePwModal').addEventListener('click', ()=>document.getElementById('pwModal').classList.remove('active'));
+document.getElementById('cancelPw').addEventListener('click', ()=>document.getElementById('pwModal').classList.remove('active'));
+document.getElementById('submitPw').addEventListener('click', async ()=>{
+  const p1 = document.getElementById('pwNew').value, p2 = document.getElementById('pwConfirm').value;
+  if(p1.length < 6){ toast('La contraseña debe tener al menos 6 caracteres'); return; }
+  if(p1 !== p2){ toast('Las contraseñas no coinciden'); return; }
+  const {error} = await sb.auth.updateUser({password: p1});
+  if(error){ toast('Error: '+error.message); return; }
+  toast('Contraseña actualizada');
+  document.getElementById('pwModal').classList.remove('active');
+});
+
+// Sesión existente
+(async ()=>{
+  const {data} = await sb.auth.getSession();
+  if(data.session){ await afterAuth(data.session.user); }
+})();
+
+/* =========================================================
+   NAVEGACIÓN
+========================================================= */
+document.querySelectorAll('.sb-item[data-view]').forEach(item=>{
+  item.addEventListener('click', ()=>switchView(item.dataset.view));
+});
+document.querySelectorAll('[data-view-link]').forEach(a=>{
+  a.addEventListener('click', (e)=>{e.preventDefault(); switchView(a.dataset.viewLink);});
+});
+function switchView(view){
+  document.querySelectorAll('.sb-item[data-view]').forEach(i=>i.classList.toggle('active', i.dataset.view===view));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+view).classList.add('active');
+  if(view==='reports') renderReports();
+}
+
+/* =========================================================
+   CARGA DE DATOS
+========================================================= */
+async function loadAll(){
+  const [clients, agents, categories, templates, slaPolicies] = await Promise.all([
+    sb.from('clients').select('*').eq('active', true).order('name'),
+    sb.from('agents').select('*').order('full_name'),
+    sb.from('categories').select('*').eq('active', true).order('name'),
+    sb.from('templates').select('*').eq('active', true).order('created_at'),
+    sb.from('sla_policies').select('*, clients(name)').order('priority'),
+  ]);
+  STATE.clients = clients.data || [];
+  STATE.agents = agents.data || [];
+  STATE.categories = categories.data || [];
+  STATE.templates = templates.data || [];
+  STATE.slaPolicies = slaPolicies.data || [];
+
+  const activeAgents = STATE.agents.filter(a=>a.active!==false);
+  populateSelect('ntClient', STATE.clients, 'id','name','Sin asignar');
+  populateSelect('ntAssign', activeAgents, 'id','full_name','Sin asignar');
+  populateSelect('fClient', STATE.clients, 'id','name','Todos los clientes');
+  populateSelect('fAgent', STATE.agents, 'id','full_name','Todos los agentes');
+  populateSelect('clLevel', null,null,null,null); // noop guard
+  populateSelect('slaClient', STATE.clients, 'id','name','Global (todos los clientes)');
+
+  await loadTickets();
+  renderDashboard();
+  renderClients();
+  renderTemplates();
+  renderSla();
+  renderAgentsTable();
+}
+
+function populateSelect(id, items, valKey, labelKey, placeholder){
+  const el = document.getElementById(id);
+  if(!el || !items) return;
+  const current = el.value;
+  el.innerHTML = '';
+  if(placeholder!==null){ const o=document.createElement('option'); o.value=''; o.textContent=placeholder; el.appendChild(o); }
+  items.forEach(it=>{
+    const o = document.createElement('option'); o.value = it[valKey]; o.textContent = it[labelKey]; el.appendChild(o);
+  });
+  if(current) el.value = current;
+}
+
+async function loadTickets(){
+  const {data, error} = await sb.from('tickets').select('*, clients(name), agents:assigned_agent_id(full_name)').order('created_at', {ascending:false}).limit(500);
+  if(error){ console.error(error); return; }
+  STATE.tickets = data || [];
+  renderTicketsTable();
+  renderDashboard();
+}
+
+/* =========================================================
+   PRIORIDAD AUTO (mismo criterio que la BD, para preview UI)
+========================================================= */
+function calcPriority(impact, urgency){
+  if(impact==='alto' && urgency==='alto') return 'P1';
+  if(impact==='alto' && urgency==='medio') return 'P2';
+  if(impact==='medio' && urgency==='alto') return 'P2';
+  if(impact==='alto' && urgency==='bajo') return 'P3';
+  if(impact==='medio' && urgency==='medio') return 'P3';
+  if(impact==='bajo' && urgency==='alto') return 'P3';
+  return 'P4';
+}
+function updatePriorityPreview(){
+  const i = document.getElementById('ntImpact').value, u = document.getElementById('ntUrgency').value;
+  document.getElementById('ntPriorityPreview').value = calcPriority(i,u);
+}
+document.getElementById('ntImpact').addEventListener('change', updatePriorityPreview);
+document.getElementById('ntUrgency').addEventListener('change', updatePriorityPreview);
+
+/* =========================================================
+   SLA: helpers de estado visual
+========================================================= */
+function slaStatus(ticket){
+  if(['resuelto','cerrado','cancelado','rechazado','implementado'].includes(ticket.status)){
+    if(ticket.sla_resolution_breached) return {cls:'sla-breach', label:'Incumplido'};
+    return {cls:'sla-ok', label:'Cumplido'};
+  }
+  if(!ticket.sla_resolution_due) return {cls:'sla-ok', label:'Sin SLA'};
+  const due = new Date(ticket.sla_resolution_due).getTime();
+  const now = Date.now();
+  const remain = due - now;
+  if(remain <= 0) return {cls:'sla-breach', label:'Vencido'};
+  const totalWindow = due - new Date(ticket.created_at).getTime();
+  if(remain < totalWindow*0.2) return {cls:'sla-warn', label: fmtRemain(remain)};
+  return {cls:'sla-ok', label: fmtRemain(remain)};
+}
+function fmtRemain(ms){
+  const mins = Math.floor(ms/60000);
+  if(mins < 60) return mins+'m restantes';
+  const hrs = Math.floor(mins/60);
+  if(hrs < 24) return hrs+'h '+(mins%60)+'m';
+  return Math.floor(hrs/24)+'d '+(hrs%24)+'h';
+}
+function slaChipHtml(ticket){
+  const s = slaStatus(ticket);
+  return `<span class="sla-chip ${s.cls}"><span class="dot"></span>${s.label}</span>`;
+}
+function startSlaTicker(){
+  setInterval(()=>{
+    if(document.getElementById('view-tickets').classList.contains('active')) renderTicketsTable();
+    if(document.getElementById('view-dashboard').classList.contains('active')) renderRecentTickets();
+  }, 30000);
+}
+
+/* =========================================================
+   DASHBOARD
+========================================================= */
+async function renderDashboard(){
+  document.getElementById('dashDate').textContent = new Date().toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  const {data: kpi} = await sb.from('v_kpi_overview').select('*').single();
+  const {data: sla30} = await sb.from('v_sla_compliance_30d').select('*').single();
+
+  const cards = [
+    {lbl:'Tickets abiertos', val: kpi?.tickets_abiertos ?? 0, accent:'primary'},
+    {lbl:'P1 abiertos', val: kpi?.p1_abiertos ?? 0, accent:'danger'},
+    {lbl:'Incidentes abiertos', val: kpi?.incidentes_abiertos ?? 0, accent:''},
+    {lbl:'Solicitudes abiertas', val: kpi?.solicitudes_abiertas ?? 0, accent:''},
+    {lbl:'Problemas abiertos', val: kpi?.problemas_abiertos ?? 0, accent:''},
+    {lbl:'Cambios activos', val: kpi?.cambios_activos ?? 0, accent:''},
+    {lbl:'SLA resolución incumplidos', val: kpi?.sla_resolucion_incumplidos ?? 0, accent:'warning'},
+    {lbl:'Creados (30 días)', val: kpi?.creados_30d ?? 0, accent:''},
+  ];
+  document.getElementById('kpiGrid').innerHTML = cards.map(c=>`
+    <div class="kpi-card ${c.accent?'accent-'+c.accent:''}">
+      <div class="lbl">${c.lbl}</div><div class="val">${c.val}</div>
+    </div>`).join('');
+
+  const openCount = kpi?.tickets_abiertos ?? 0;
+  const navBadge = document.getElementById('navOpenCount');
+  if(openCount>0){ navBadge.style.display='inline-block'; navBadge.textContent = openCount; } else { navBadge.style.display='none'; }
+
+  renderRecentTickets();
+  renderSlaGauge(sla30);
+  renderTypeChart();
+}
+
+function renderRecentTickets(){
+  const recent = STATE.tickets.slice(0,8);
+  const tbody = document.querySelector('#recentTicketsTable tbody');
+  if(recent.length===0){ tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:24px;">Aún no hay tickets. Crea el primero.</td></tr>'; return; }
+  tbody.innerHTML = recent.map(t=>`
+    <tr onclick="openTicketDrawer('${t.id}')">
+      <td class="ticket-id">${t.ticket_number}</td>
+      <td>${escapeHtml(t.title)}</td>
+      <td>${t.clients?.name || '—'}</td>
+      <td><span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span></td>
+      <td><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
+      <td>${slaChipHtml(t)}</td>
+    </tr>`).join('');
+}
+
+let chartSla, chartType;
+function renderSlaGauge(sla30){
+  const ctx = document.getElementById('chartSlaGauge').getContext('2d');
+  const pct = sla30?.pct_cumplimiento_resolucion ?? 100;
+  if(chartSla) chartSla.destroy();
+  chartSla = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels:['Cumplido','Incumplido'], datasets:[{data:[pct, 100-pct], backgroundColor:['#0F9D58','#C0261F'], borderWidth:0}] },
+    options:{ cutout:'72%', plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false }
+  });
+  const wrap = document.getElementById('chartSlaGauge').parentElement;
+  let label = wrap.querySelector('.gauge-label');
+  if(!label){ label = document.createElement('div'); label.className='gauge-label'; label.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;'; wrap.appendChild(label); }
+  label.innerHTML = `<div style="font-family:var(--font-mono);font-size:26px;font-weight:700;">${pct==null?'—':pct+'%'}</div><div style="font-size:11px;color:var(--text-3);">resolución dentro de SLA</div>`;
+}
+function renderTypeChart(){
+  const ctx = document.getElementById('chartByType').getContext('2d');
+  const counts = {incidente:0, solicitud:0, problema:0, cambio:0};
+  STATE.tickets.forEach(t=>{ if(!['resuelto','cerrado','cancelado','rechazado'].includes(t.status)) counts[t.ticket_type]++; });
+  if(chartType) chartType.destroy();
+  chartType = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:Object.keys(counts).map(k=>TYPE_LABELS[k]), datasets:[{data:Object.values(counts), backgroundColor:['#C0261F','#2454C7','#6D28D9','#0F9D58'], borderRadius:6}] },
+    options:{ plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true, ticks:{precision:0}}} }
+  });
+}
+
+/* =========================================================
+   TABLA DE TICKETS + FILTROS
+========================================================= */
+['fSearch','fType','fStatus','fPriority','fClient','fAgent'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', renderTicketsTable);
+  document.getElementById(id).addEventListener('change', renderTicketsTable);
+});
+document.getElementById('fType').addEventListener('change', ()=>{
+  const type = document.getElementById('fType').value;
+  const statusSel = document.getElementById('fStatus');
+  const statuses = type ? STATUS_BY_TYPE[type] : Object.keys(STATUS_LABELS);
+  statusSel.innerHTML = '<option value="">Todos los estados</option>' + [...new Set(statuses)].map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join('');
+});
+
+function renderTicketsTable(){
+  const q = document.getElementById('fSearch').value.toLowerCase();
+  const type = document.getElementById('fType').value;
+  const status = document.getElementById('fStatus').value;
+  const priority = document.getElementById('fPriority').value;
+  const client = document.getElementById('fClient').value;
+  const agent = document.getElementById('fAgent').value;
+
+  let filtered = STATE.tickets.filter(t=>{
+    if(type && t.ticket_type!==type) return false;
+    if(status && t.status!==status) return false;
+    if(priority && t.priority!==priority) return false;
+    if(client && t.client_id!==client) return false;
+    if(agent && t.assigned_agent_id!==agent) return false;
+    if(q && !(t.ticket_number.toLowerCase().includes(q) || t.title.toLowerCase().includes(q) || (t.clients?.name||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+
+  const tbody = document.querySelector('#ticketsTable tbody');
+  document.getElementById('ticketsEmpty').style.display = filtered.length===0 ? 'block':'none';
+  tbody.innerHTML = filtered.map(t=>`
+    <tr onclick="openTicketDrawer('${t.id}')">
+      <td class="ticket-id">${t.ticket_number}</td>
+      <td><span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span></td>
+      <td>${escapeHtml(t.title)}</td>
+      <td>${t.clients?.name || '—'}</td>
+      <td><span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span></td>
+      <td><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
+      <td>${t.agents?.full_name || '—'}</td>
+      <td>${slaChipHtml(t)}</td>
+      <td style="color:var(--text-3);">${fmtDateShort(t.created_at)}</td>
+    </tr>`).join('');
+}
+
+function escapeHtml(s){ if(s==null) return ''; return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* =========================================================
+   NUEVO TICKET
+========================================================= */
+function openNewTicketModal(defaultType){
+  STATE.newTicketType = defaultType || 'incidente';
+  STATE.selectedTemplate = null;
+  document.querySelectorAll('#newTicketTypeTabs .tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.ntype===STATE.newTicketType));
+  ['ntTitle','ntDescription','ntReportedBy','ntRollback'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('ntClient').value='';
+  document.getElementById('ntImpact').value='medio'; document.getElementById('ntUrgency').value='medio';
+  document.getElementById('ntSource').value='monitoreo_prtg';
+  document.getElementById('ntAssign').value='';
+  updatePriorityPreview();
+  renderCategoryOptions();
+  renderTemplatePicker();
+  toggleChangeFields();
+  document.getElementById('ntChecklistPreview').innerHTML='';
+  document.getElementById('newTicketModal').classList.add('active');
+}
+document.getElementById('btnNewTicket').addEventListener('click', ()=>openNewTicketModal('incidente'));
+document.getElementById('btnNewTicketDash').addEventListener('click', ()=>openNewTicketModal('incidente'));
+document.getElementById('closeNewTicketModal').addEventListener('click', ()=>document.getElementById('newTicketModal').classList.remove('active'));
+document.getElementById('cancelNewTicket').addEventListener('click', ()=>document.getElementById('newTicketModal').classList.remove('active'));
+
+document.querySelectorAll('#newTicketTypeTabs .tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    STATE.newTicketType = btn.dataset.ntype;
+    STATE.selectedTemplate = null;
+    document.querySelectorAll('#newTicketTypeTabs .tab-btn').forEach(b=>b.classList.toggle('active', b===btn));
+    renderCategoryOptions();
+    renderTemplatePicker();
+    toggleChangeFields();
+  });
+});
+function toggleChangeFields(){
+  document.getElementById('ntChangeFields').style.display = STATE.newTicketType==='cambio' ? 'block':'none';
+}
+function renderCategoryOptions(){
+  const cats = STATE.categories.filter(c=>c.ticket_type===STATE.newTicketType);
+  const sel = document.getElementById('ntCategory');
+  sel.innerHTML = '<option value="">—</option>' + cats.map(c=>`<option value="${c.id}">${c.name}${c.subcategory?' — '+c.subcategory:''}</option>`).join('');
+}
+function renderTemplatePicker(){
+  const tpls = STATE.templates.filter(t=>t.ticket_type===STATE.newTicketType);
+  const wrap = document.getElementById('templatePicker');
+  if(tpls.length===0){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = `<label style="font-size:12.5px;font-weight:600;color:var(--text-2);margin-bottom:6px;display:block;">Usar plantilla (opcional)</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">${tpls.map(t=>`<button type="button" class="btn btn-ghost btn-sm" data-tplid="${t.id}">${t.name}</button>`).join('')}
+    <button type="button" class="btn btn-ghost btn-sm" data-tplid="">Sin plantilla</button></div>`;
+  wrap.querySelectorAll('button[data-tplid]').forEach(b=>{
+    b.addEventListener('click', ()=>applyTemplate(b.dataset.tplid));
+  });
+}
+function applyTemplate(id){
+  wrap_selected_btn(id);
+  if(!id){ STATE.selectedTemplate=null; document.getElementById('ntChecklistPreview').innerHTML=''; return; }
+  const tpl = STATE.templates.find(t=>t.id===id);
+  if(!tpl) return;
+  STATE.selectedTemplate = tpl;
+  document.getElementById('ntTitle').value = tpl.title_template.replace('{cliente}', STATE.clients.find(c=>c.id===document.getElementById('ntClient').value)?.name || '');
+  document.getElementById('ntDescription').value = tpl.description_template;
+  document.getElementById('ntImpact').value = tpl.default_impact;
+  document.getElementById('ntUrgency').value = tpl.default_urgency;
+  if(tpl.category_id) document.getElementById('ntCategory').value = tpl.category_id;
+  if(tpl.change_type) document.getElementById('ntChangeType').value = tpl.change_type;
+  updatePriorityPreview();
+  const checklist = Array.isArray(tpl.checklist) ? tpl.checklist : [];
+  document.getElementById('ntChecklistPreview').innerHTML = checklist.length ? `
+    <div class="field"><label>Checklist sugerido (referencia, se agrega como nota al crear)</label>
+    ${checklist.map(c=>`<div class="checklist-item"><input type="checkbox" disabled><span>${escapeHtml(c)}</span></div>`).join('')}</div>` : '';
+}
+function wrap_selected_btn(id){
+  document.querySelectorAll('#templatePicker button[data-tplid]').forEach(b=>{
+    b.classList.toggle('btn-primary', b.dataset.tplid===id);
+    b.classList.toggle('btn-ghost', b.dataset.tplid!==id);
+  });
+}
+
+document.getElementById('submitNewTicket').addEventListener('click', async ()=>{
+  const title = document.getElementById('ntTitle').value.trim();
+  if(!title){ toast('El título es obligatorio'); return; }
+  const btn = document.getElementById('submitNewTicket');
+  btn.disabled = true; btn.textContent = 'Creando...';
+  try{
+    const payload = {
+      ticket_type: STATE.newTicketType,
+      title,
+      description: document.getElementById('ntDescription').value,
+      client_id: document.getElementById('ntClient').value || null,
+      category_id: document.getElementById('ntCategory').value || null,
+      template_id: STATE.selectedTemplate?.id || null,
+      impact: document.getElementById('ntImpact').value,
+      urgency: document.getElementById('ntUrgency').value,
+      source: document.getElementById('ntSource').value,
+      reported_by: document.getElementById('ntReportedBy').value,
+      assigned_agent_id: document.getElementById('ntAssign').value || null,
+      created_by_agent_id: STATE.agent.id,
+      status: STATE.newTicketType==='cambio' ? 'nuevo' : (document.getElementById('ntAssign').value ? 'asignado' : 'nuevo'),
+    };
+    if(STATE.newTicketType==='cambio'){
+      payload.change_type = document.getElementById('ntChangeType').value;
+      payload.change_risk = document.getElementById('ntChangeRisk').value;
+      payload.rollback_plan = document.getElementById('ntRollback').value;
+      payload.scheduled_start = document.getElementById('ntSchedStart').value || null;
+      payload.scheduled_end = document.getElementById('ntSchedEnd').value || null;
+    }
+    const {data, error} = await sb.from('tickets').insert(payload).select().single();
+    if(error) throw error;
+
+    if(STATE.selectedTemplate && Array.isArray(STATE.selectedTemplate.checklist) && STATE.selectedTemplate.checklist.length){
+      const checklistText = 'Checklist sugerido por plantilla:\n' + STATE.selectedTemplate.checklist.map(c=>'☐ '+c).join('\n');
+      await sb.from('ticket_comments').insert({ticket_id:data.id, agent_id:STATE.agent.id, body:checklistText, is_internal:true});
+    }
+    toast('Ticket '+data.ticket_number+' creado');
+    document.getElementById('newTicketModal').classList.remove('active');
+    await loadTickets();
+    openTicketDrawer(data.id);
+  }catch(err){
+    toast('Error: '+err.message);
+  }finally{
+    btn.disabled=false; btn.textContent='Crear ticket';
+  }
+});
+
+/* =========================================================
+   DETALLE DE TICKET (DRAWER)
+========================================================= */
+async function openTicketDrawer(id){
+  STATE.currentTicketId = id;
+  const t = STATE.tickets.find(x=>x.id===id);
+  if(!t) return;
+  document.getElementById('drawerTicketNumber').textContent = t.ticket_number + ' · ' + TYPE_LABELS[t.ticket_type];
+  const {data: comments} = await sb.from('ticket_comments').select('*, agents(full_name)').eq('ticket_id', id).order('created_at',{ascending:false});
+  renderTicketDrawerBody(t, comments || []);
+  document.getElementById('ticketDrawerOverlay').classList.add('active');
+}
+document.getElementById('closeTicketDrawer').addEventListener('click', ()=>document.getElementById('ticketDrawerOverlay').classList.remove('active'));
+document.getElementById('ticketDrawerOverlay').addEventListener('click', (e)=>{ if(e.target.id==='ticketDrawerOverlay') e.currentTarget.classList.remove('active'); });
+
+function renderTicketDrawerBody(t, comments){
+  const statuses = STATUS_BY_TYPE[t.ticket_type];
+  const client = STATE.clients.find(c=>c.id===t.client_id);
+  const body = document.getElementById('drawerBody');
+  body.innerHTML = `
+    <h2 style="font-size:16px;margin:0 0 4px;">${escapeHtml(t.title)}</h2>
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">
+      <span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span>
+      <span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span>
+      <span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]}</span>
+      ${slaChipHtml(t)}
+    </div>
+
+    <div class="detail-grid">
+      <div class="dg-item"><div class="k">Cliente</div><div class="v">${client?.name || '—'}</div></div>
+      <div class="dg-item"><div class="k">Origen</div><div class="v">${SOURCE_LABELS[t.source]||'—'}</div></div>
+      <div class="dg-item"><div class="k">Reportado por</div><div class="v">${t.reported_by || '—'}</div></div>
+      <div class="dg-item"><div class="k">Creado</div><div class="v">${fmtDate(t.created_at)}</div></div>
+      <div class="dg-item"><div class="k">Vence resolución</div><div class="v">${fmtDate(t.sla_resolution_due)}</div></div>
+      <div class="dg-item"><div class="k">Resuelto</div><div class="v">${t.resolved_at ? fmtDate(t.resolved_at) : '—'}</div></div>
+    </div>
+
+    ${t.ticket_type==='cambio' ? `
+    <div class="detail-grid">
+      <div class="dg-item"><div class="k">Tipo de cambio</div><div class="v">${t.change_type||'—'}</div></div>
+      <div class="dg-item"><div class="k">Riesgo</div><div class="v">${t.change_risk||'—'}</div></div>
+      <div class="dg-item"><div class="k">Inicio programado</div><div class="v">${fmtDate(t.scheduled_start)}</div></div>
+      <div class="dg-item"><div class="k">Fin programado</div><div class="v">${fmtDate(t.scheduled_end)}</div></div>
+    </div>` : ''}
+
+    <div class="desc-box">${escapeHtml(t.description || 'Sin descripción.')}</div>
+
+    <div class="row-2" style="margin-bottom:16px;">
+      <div class="field"><label>Estado</label>
+        <select id="drStatus">${statuses.map(s=>`<option value="${s}" ${s===t.status?'selected':''}>${STATUS_LABELS[s]}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Asignar a</label>
+        <select id="drAssign"><option value="">Sin asignar</option>${STATE.agents.map(a=>`<option value="${a.id}" ${a.id===t.assigned_agent_id?'selected':''}>${a.full_name}</option>`).join('')}</select>
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm" id="drSaveBtn" style="margin-bottom:20px;">Guardar cambios</button>
+
+    <h3 style="font-size:13.5px;margin-bottom:10px;">Bitácora / comentarios</h3>
+    <div class="field">
+      <textarea id="drNewComment" rows="3" placeholder="Escribe una nota de trabajo..."></textarea>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+        <label style="font-size:12px;color:var(--text-2);display:flex;align-items:center;gap:5px;"><input type="checkbox" id="drCommentInternal" checked> Nota interna</label>
+        <button class="btn btn-primary btn-sm" id="drAddComment">Agregar</button>
+      </div>
+    </div>
+    <div id="drComments" style="margin-top:12px;">
+      ${comments.length===0 ? '<p style="color:var(--text-3);font-size:12.5px;">Sin comentarios aún.</p>' : comments.map(c=>`
+        <div class="comment ${c.is_internal?'internal':'external'}">
+          <div class="meta"><span>${c.agents?.full_name || 'Agente'} · ${c.is_internal?'Nota interna':'Respuesta a cliente'}</span><span>${fmtDate(c.created_at)}</span></div>
+          <div class="body">${escapeHtml(c.body)}</div>
+        </div>`).join('')}
+    </div>
+  `;
+
+  document.getElementById('drSaveBtn').addEventListener('click', ()=>saveTicketUpdates(t));
+  document.getElementById('drAddComment').addEventListener('click', ()=>addTicketComment(t.id));
+}
+
+async function saveTicketUpdates(t){
+  const newStatus = document.getElementById('drStatus').value;
+  const newAgent = document.getElementById('drAssign').value || null;
+  const patch = {status:newStatus, assigned_agent_id:newAgent};
+  if(['resuelto'].includes(newStatus) && !t.resolved_at) patch.resolved_at = new Date().toISOString();
+  if(['cerrado'].includes(newStatus) && !t.closed_at) patch.closed_at = new Date().toISOString();
+  if(!t.first_response_at && newStatus!=='nuevo') patch.first_response_at = new Date().toISOString();
+  const {error} = await sb.from('tickets').update(patch).eq('id', t.id);
+  if(error){ toast('Error: '+error.message); return; }
+  toast('Ticket actualizado');
+  await loadTickets();
+  openTicketDrawer(t.id);
+}
+async function addTicketComment(ticketId){
+  const body = document.getElementById('drNewComment').value.trim();
+  if(!body) return;
+  const isInternal = document.getElementById('drCommentInternal').checked;
+  const {error} = await sb.from('ticket_comments').insert({ticket_id:ticketId, agent_id:STATE.agent.id, body, is_internal:isInternal});
+  if(error){ toast('Error: '+error.message); return; }
+  openTicketDrawer(ticketId);
+}
+
+/* =========================================================
+   CLIENTES
+========================================================= */
+function renderClients(){
+  const wrap = document.getElementById('clientsList');
+  if(STATE.clients.length===0){ wrap.innerHTML = '<div class="empty-state"><div class="big">◈</div><p><strong>Aún no hay clientes</strong></p><p>Agrega tu primer cliente para vincularlo a los tickets.</p></div>'; return; }
+  wrap.innerHTML = STATE.clients.map(c=>`
+    <div class="client-card">
+      <div>
+        <h4>${escapeHtml(c.name)} ${c.short_name?`<span style="color:var(--text-3);font-weight:400;">(${c.short_name})</span>`:''}</h4>
+        <p>Contrato: ${c.contract_level} · Contacto: ${c.contact_name||'—'} ${c.contact_phone? '· '+c.contact_phone:''}</p>
+        <p>${c.contact_email||''}</p>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-ghost btn-sm" onclick="editClient('${c.id}')">Editar</button>
+      </div>
+    </div>`).join('');
+}
+function editClient(id){
+  const c = STATE.clients.find(x=>x.id===id);
+  document.getElementById('clientModalTitle').textContent = 'Editar cliente';
+  document.getElementById('clId').value = c.id;
+  document.getElementById('clName').value = c.name;
+  document.getElementById('clShort').value = c.short_name||'';
+  document.getElementById('clLevel').value = c.contract_level||'estandar';
+  document.getElementById('clContactName').value = c.contact_name||'';
+  document.getElementById('clContactPhone').value = c.contact_phone||'';
+  document.getElementById('clContactEmail').value = c.contact_email||'';
+  document.getElementById('clAddress').value = c.address||'';
+  document.getElementById('clNotes').value = c.notes||'';
+  document.getElementById('clientModal').classList.add('active');
+}
+document.getElementById('btnNewClient').addEventListener('click', ()=>{
+  document.getElementById('clientModalTitle').textContent = 'Nuevo cliente';
+  ['clId','clName','clShort','clContactName','clContactPhone','clContactEmail','clAddress','clNotes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('clLevel').value='estandar';
+  document.getElementById('clientModal').classList.add('active');
+});
+document.getElementById('closeClientModal').addEventListener('click', ()=>document.getElementById('clientModal').classList.remove('active'));
+document.getElementById('cancelClient').addEventListener('click', ()=>document.getElementById('clientModal').classList.remove('active'));
+document.getElementById('submitClient').addEventListener('click', async ()=>{
+  const id = document.getElementById('clId').value;
+  const name = document.getElementById('clName').value.trim();
+  if(!name){ toast('El nombre es obligatorio'); return; }
+  const payload = {
+    name,
+    short_name: document.getElementById('clShort').value,
+    contract_level: document.getElementById('clLevel').value,
+    contact_name: document.getElementById('clContactName').value,
+    contact_phone: document.getElementById('clContactPhone').value,
+    contact_email: document.getElementById('clContactEmail').value,
+    address: document.getElementById('clAddress').value,
+    notes: document.getElementById('clNotes').value,
+  };
+  const {error} = id ? await sb.from('clients').update(payload).eq('id', id) : await sb.from('clients').insert(payload);
+  if(error){ toast('Error: '+error.message); return; }
+  toast('Cliente guardado');
+  document.getElementById('clientModal').classList.remove('active');
+  await loadAll();
+});
+
+/* =========================================================
+   PLANTILLAS
+========================================================= */
+document.querySelectorAll('#templateTabs .tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#templateTabs .tab-btn').forEach(b=>b.classList.toggle('active', b===btn));
+    STATE.templateFilterType = btn.dataset.ttype;
+    renderTemplates();
+  });
+});
+function renderTemplates(){
+  const list = STATE.templates.filter(t=> !STATE.templateFilterType || t.ticket_type===STATE.templateFilterType);
+  const wrap = document.getElementById('templatesList');
+  if(list.length===0){ wrap.innerHTML = '<div class="empty-state"><div class="big">▥</div><p><strong>No hay plantillas en esta categoría</strong></p></div>'; return; }
+  wrap.innerHTML = list.map(t=>`
+    <div class="template-card" onclick="editTemplate('${t.id}')">
+      <div class="tc-head">
+        <span class="tc-title">${escapeHtml(t.name)}</span>
+        <span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span>
+      </div>
+      <div class="tc-desc">${escapeHtml(t.title_template)}</div>
+    </div>`).join('');
+}
+function editTemplate(id){
+  const t = STATE.templates.find(x=>x.id===id);
+  document.getElementById('templateModalTitle').textContent = 'Editar plantilla';
+  document.getElementById('tpId').value = t.id;
+  document.getElementById('tpType').value = t.ticket_type;
+  renderTemplateCategoryOptions();
+  document.getElementById('tpCategory').value = t.category_id || '';
+  document.getElementById('tpName').value = t.name;
+  document.getElementById('tpTitleTpl').value = t.title_template;
+  document.getElementById('tpImpact').value = t.default_impact;
+  document.getElementById('tpUrgency').value = t.default_urgency;
+  document.getElementById('tpDescTpl').value = t.description_template;
+  document.getElementById('tpChecklist').value = (t.checklist||[]).join('\n');
+  document.getElementById('templateModal').classList.add('active');
+}
+function renderTemplateCategoryOptions(){
+  const type = document.getElementById('tpType').value;
+  const cats = STATE.categories.filter(c=>c.ticket_type===type);
+  document.getElementById('tpCategory').innerHTML = '<option value="">—</option>' + cats.map(c=>`<option value="${c.id}">${c.name}${c.subcategory?' — '+c.subcategory:''}</option>`).join('');
+}
+document.getElementById('tpType').addEventListener('change', renderTemplateCategoryOptions);
+document.getElementById('btnNewTemplate').addEventListener('click', ()=>{
+  document.getElementById('templateModalTitle').textContent = 'Nueva plantilla';
+  ['tpId','tpName','tpTitleTpl','tpDescTpl','tpChecklist'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('tpType').value='incidente';
+  renderTemplateCategoryOptions();
+  document.getElementById('tpImpact').value='medio'; document.getElementById('tpUrgency').value='medio';
+  document.getElementById('templateModal').classList.add('active');
+});
+document.getElementById('closeTemplateModal').addEventListener('click', ()=>document.getElementById('templateModal').classList.remove('active'));
+document.getElementById('cancelTemplate').addEventListener('click', ()=>document.getElementById('templateModal').classList.remove('active'));
+document.getElementById('submitTemplate').addEventListener('click', async ()=>{
+  const id = document.getElementById('tpId').value;
+  const name = document.getElementById('tpName').value.trim();
+  const titleTpl = document.getElementById('tpTitleTpl').value.trim();
+  if(!name || !titleTpl){ toast('Nombre y título sugerido son obligatorios'); return; }
+  const checklist = document.getElementById('tpChecklist').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const payload = {
+    ticket_type: document.getElementById('tpType').value,
+    category_id: document.getElementById('tpCategory').value || null,
+    name, title_template: titleTpl,
+    default_impact: document.getElementById('tpImpact').value,
+    default_urgency: document.getElementById('tpUrgency').value,
+    description_template: document.getElementById('tpDescTpl').value,
+    checklist,
+  };
+  const {error} = id ? await sb.from('templates').update(payload).eq('id', id) : await sb.from('templates').insert(payload);
+  if(error){ toast('Error: '+error.message); return; }
+  toast('Plantilla guardada');
+  document.getElementById('templateModal').classList.remove('active');
+  await loadAll();
+});
+
+/* =========================================================
+   SLA
+========================================================= */
+function renderSla(){
+  const tbody = document.querySelector('#slaTable tbody');
+  if(STATE.slaPolicies.length===0){ tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px;">Sin políticas configuradas</td></tr>'; return; }
+  tbody.innerHTML = STATE.slaPolicies.map(p=>`
+    <tr>
+      <td>${p.clients?.name || 'Global'}</td>
+      <td><span class="pill pill-${p.priority.toLowerCase()}">${p.priority}</span></td>
+      <td>${p.response_minutes} min</td>
+      <td>${p.resolution_minutes} min</td>
+      <td>${p.business_hours_only ? 'Horario laboral' : '24x7'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="deleteSla('${p.id}')">Eliminar</button></td>
+    </tr>`).join('');
+}
+async function deleteSla(id){
+  if(!confirm('¿Eliminar esta política SLA?')) return;
+  const {error} = await sb.from('sla_policies').delete().eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  toast('Política eliminada');
+  await loadAll();
+}
+document.getElementById('btnNewSla').addEventListener('click', ()=>document.getElementById('slaModal').classList.add('active'));
+document.getElementById('closeSlaModal').addEventListener('click', ()=>document.getElementById('slaModal').classList.remove('active'));
+document.getElementById('cancelSla').addEventListener('click', ()=>document.getElementById('slaModal').classList.remove('active'));
+document.getElementById('submitSla').addEventListener('click', async ()=>{
+  const payload = {
+    client_id: document.getElementById('slaClient').value || null,
+    priority: document.getElementById('slaPriority').value,
+    response_minutes: parseInt(document.getElementById('slaResponse').value),
+    resolution_minutes: parseInt(document.getElementById('slaResolution').value),
+    business_hours_only: document.getElementById('slaBizHours').value === 'true',
+  };
+  const {error} = await sb.from('sla_policies').upsert(payload, {onConflict:'client_id,priority'});
+  if(error){ toast('Error: '+error.message); return; }
+  toast('Política guardada');
+  document.getElementById('slaModal').classList.remove('active');
+  await loadAll();
+});
+
+/* =========================================================
+   AGENTES
+========================================================= */
+async function renderAgentsTable(){
+  const {data} = await sb.from('v_kpi_by_agent').select('*');
+  const tbody = document.querySelector('#agentsTable tbody');
+  const rows = (data||[]).map(a=>{
+    const agent = STATE.agents.find(x=>x.id===a.agent_id);
+    return `<tr>
+      <td>${a.full_name}</td><td>${agent?.email||''}</td><td>${ROLE_LABELS[agent?.role]||agent?.role||''}</td>
+      <td>${a.tickets_abiertos||0}</td><td>${a.tickets_resueltos||0}</td><td>${a.sla_incumplidos||0}</td>
+    </tr>`;
+  });
+  tbody.innerHTML = rows.join('') || '<tr><td colspan="6" style="text-align:center;color:var(--text-3);padding:20px;">Sin agentes registrados</td></tr>';
+
+  const isAdmin = STATE.agent?.role === 'admin';
+  document.getElementById('adminAgentsPanel').style.display = isAdmin ? 'block' : 'none';
+  document.getElementById('notAdminNotice').style.display = isAdmin ? 'none' : 'block';
+  if(isAdmin) renderAdminAgentsTable();
+}
+
+function renderAdminAgentsTable(){
+  const tbody = document.querySelector('#adminAgentsTable tbody');
+  tbody.innerHTML = STATE.agents.map(a=>`
+    <tr>
+      <td>${escapeHtml(a.full_name)}</td>
+      <td>${escapeHtml(a.email)}</td>
+      <td>
+        <select data-agent-role="${a.id}" ${a.id===STATE.agent.id?'disabled title="No puedes cambiar tu propio rol"':''}>
+          <option value="agente_noc" ${a.role==='agente_noc'?'selected':''}>Agente NOC</option>
+          <option value="agente_especialista" ${a.role==='agente_especialista'?'selected':''}>Agente especialista</option>
+          <option value="admin" ${a.role==='admin'?'selected':''}>Administrador</option>
+        </select>
+      </td>
+      <td><input type="text" data-agent-specialty="${a.id}" value="${a.specialty||''}" placeholder="Ej. Redes, Seguridad" style="width:130px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;"></td>
+      <td>${a.auth_user_id ? '<span class="pill" style="background:var(--success-bg);color:var(--success);">Activa</span>' : '<span class="pill" style="background:var(--warning-bg);color:var(--warning);">Pendiente</span>'}</td>
+      <td><input type="checkbox" data-agent-active="${a.id}" ${a.active!==false?'checked':''} ${a.id===STATE.agent.id?'disabled title="No puedes desactivar tu propia cuenta"':''}></td>
+      <td><button class="btn btn-primary btn-sm" data-agent-save="${a.id}">Guardar</button></td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('button[data-agent-save]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.agentSave;
+      const role = tbody.querySelector(`select[data-agent-role="${id}"]`).value;
+      const specialty = tbody.querySelector(`input[data-agent-specialty="${id}"]`).value;
+      const activeEl = tbody.querySelector(`input[data-agent-active="${id}"]`);
+      const active = activeEl.checked;
+      const {error} = await sb.from('agents').update({role, specialty, active}).eq('id', id);
+      if(error){ toast('Error: '+error.message); return; }
+      toast('Cuenta actualizada');
+      await loadAll();
+    });
+  });
+}
+
+document.getElementById('btnNewInvite').addEventListener('click', ()=>{
+  ['invName','invEmail','invSpecialty'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('invRole').value='agente_noc';
+  document.getElementById('inviteModal').classList.add('active');
+});
+document.getElementById('closeInviteModal').addEventListener('click', ()=>document.getElementById('inviteModal').classList.remove('active'));
+document.getElementById('cancelInvite').addEventListener('click', ()=>document.getElementById('inviteModal').classList.remove('active'));
+document.getElementById('submitInvite').addEventListener('click', async ()=>{
+  const full_name = document.getElementById('invName').value.trim();
+  const email = document.getElementById('invEmail').value.trim().toLowerCase();
+  const role = document.getElementById('invRole').value;
+  const specialty = document.getElementById('invSpecialty').value.trim();
+  if(!full_name || !email){ toast('Nombre y correo son obligatorios'); return; }
+  const {error} = await sb.from('agents').insert({full_name, email, role, specialty, active:true});
+  if(error){
+    if(/duplicate/i.test(error.message)) toast('Ya existe una cuenta o invitación con ese correo');
+    else toast('Error: '+error.message);
+    return;
+  }
+  toast('Invitación creada para '+email);
+  document.getElementById('inviteModal').classList.remove('active');
+  await loadAll();
+});
+
+/* =========================================================
+   REPORTES
+========================================================= */
+async function renderReports(){
+  const [{data: byAgent}, {data: byClient}] = await Promise.all([
+    sb.from('v_kpi_by_agent').select('*'),
+    sb.from('v_kpi_by_client').select('*'),
+  ]);
+  document.querySelector('#reportAgentTable tbody').innerHTML = (byAgent||[]).map(a=>`
+    <tr><td>${a.full_name}</td><td>${a.tickets_abiertos||0}</td><td>${a.tickets_resueltos||0}</td><td>${a.horas_prom_resolucion ?? '—'}</td><td>${a.sla_incumplidos||0}</td></tr>
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:20px;">Sin datos</td></tr>';
+  document.querySelector('#reportClientTable tbody').innerHTML = (byClient||[]).map(c=>`
+    <tr><td>${c.name}</td><td>${c.total_tickets||0}</td><td>${c.abiertos||0}</td><td>${c.pct_cumplimiento_sla!=null ? c.pct_cumplimiento_sla+'%' : '—'}</td><td>${c.sla_incumplidos||0}</td></tr>
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--text-3);padding:20px;">Sin datos</td></tr>';
+}
+</script>
+</body>
+</html>
