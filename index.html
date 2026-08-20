@@ -389,6 +389,10 @@ label.req::after{content:' *';color:var(--danger);}
             <h3>Tickets por tipo (abiertos)</h3>
             <div class="chart-wrap"><canvas id="chartByType"></canvas></div>
           </div>
+          <div class="panel">
+            <h3>Tickets por línea de soporte (abiertos)</h3>
+            <div class="chart-wrap"><canvas id="chartByLine"></canvas></div>
+          </div>
         </div>
       </div>
     </div>
@@ -405,10 +409,21 @@ label.req::after{content:' *';color:var(--danger);}
           <select id="fType"><option value="">Todos los tipos</option><option value="incidente">Incidente</option><option value="solicitud">Solicitud</option><option value="problema">Problema</option><option value="cambio">Cambio</option></select>
           <select id="fStatus"><option value="">Todos los estados</option></select>
           <select id="fPriority"><option value="">Toda prioridad</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option><option value="P4">P4</option></select>
+          <select id="fLine"><option value="">Toda línea</option><option value="l1">1ª línea (NOC)</option><option value="l2">2ª línea</option><option value="l3">3ª línea (Sistemas)</option></select>
           <select id="fClient"><option value="">Todos los clientes</option></select>
           <select id="fAgent"><option value="">Todos los agentes</option></select>
         </div>
-        <table id="ticketsTable"><thead><tr><th>Folio</th><th>Tipo</th><th>Título</th><th>Cliente</th><th>Prioridad</th><th>Estado</th><th>Agente</th><th>SLA resolución</th><th>Creado</th></tr></thead><tbody></tbody></table>
+        <div id="bulkActionBar" style="display:none;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:8px 12px;margin-bottom:12px;align-items:center;justify-content:space-between;">
+          <span id="bulkSelectedCount" style="font-size:12.5px;font-weight:600;color:var(--primary);"></span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-primary btn-sm" id="btnBulkClose">Cerrar seleccionados</button>
+            <button class="btn btn-ghost btn-sm" id="btnBulkClear">Cancelar selección</button>
+          </div>
+        </div>
+        <table id="ticketsTable"><thead><tr>
+          <th style="width:28px;"><input type="checkbox" id="fSelectAll"></th>
+          <th>Folio</th><th>Tipo</th><th>Título</th><th>Cliente</th><th>Línea</th><th>Prioridad</th><th>Estado</th><th>Agente</th><th>SLA resolución</th><th>Creado</th>
+        </tr></thead><tbody></tbody></table>
         <div class="empty-state" id="ticketsEmpty" style="display:none;">
           <div class="big">▤</div><p><strong>No hay tickets que coincidan</strong></p><p>Ajusta los filtros o crea un nuevo ticket.</p>
         </div>
@@ -502,9 +517,18 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button class="btn btn-ghost btn-sm" id="btnHaloTest">Probar conexión</button>
           <button class="btn btn-ghost btn-sm" id="btnHaloRaw">Ver datos crudos (diagnóstico)</button>
-          <button class="btn btn-primary btn-sm" id="btnHaloSync">Sincronizar tickets ahora</button>
+          <button class="btn btn-primary btn-sm" id="btnHaloPreview">Ver vista previa de sincronización</button>
         </div>
         <div id="haloResult" style="margin-top:12px;font-size:12.5px;color:var(--text-2);white-space:pre-wrap;"></div>
+        <div id="haloPreviewPanel" style="display:none;margin-top:14px;">
+          <h3 style="font-size:13.5px;">Vista previa — así quedarían los tickets al importar</h3>
+          <p class="hint" style="margin-bottom:10px;">Revisa que tipo, estado, prioridad y cliente se vean correctos antes de confirmar. Se muestran hasta 25 de <span id="haloPreviewTotal">0</span> tickets encontrados.</p>
+          <div style="overflow-x:auto;"><table id="haloPreviewTable"><thead></thead><tbody></tbody></table></div>
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="btn btn-primary btn-sm" id="btnHaloConfirmSync">Confirmar e importar todos</button>
+            <button class="btn btn-ghost btn-sm" id="btnHaloCancelPreview">Cancelar</button>
+          </div>
+        </div>
       </div>
 
       <div class="panel">
@@ -603,7 +627,14 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
         </select></div>
         <div class="field"><label>Reportado por</label><input type="text" id="ntReportedBy" placeholder="Nombre de quien reporta"></div>
       </div>
-      <div class="field" id="ntAssignWrap"><label>Asignar a</label><select id="ntAssign"><option value="">Sin asignar</option></select></div>
+      <div class="row-2">
+        <div class="field" id="ntAssignWrap"><label>Asignar a</label><select id="ntAssign"><option value="">Sin asignar</option></select></div>
+        <div class="field"><label>Línea de soporte</label><select id="ntSupportLine">
+          <option value="l1">1ª línea (NOC)</option>
+          <option value="l2">2ª línea</option>
+          <option value="l3">3ª línea (Sistemas)</option>
+        </select></div>
+      </div>
       <div class="field"><label>Descripción</label><textarea id="ntDescription" rows="7"></textarea></div>
       <div id="ntChangeFields" style="display:none;">
         <div class="row-2">
@@ -723,6 +754,25 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
   </div>
 </div>
 
+<!-- ============ MODAL: CIERRE MASIVO ============ -->
+<div class="modal-center" id="bulkCloseModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Cerrar tickets seleccionados</h3><button class="drawer-close" id="closeBulkCloseModal">×</button></div>
+    <div class="modal-body">
+      <p class="hint" style="margin-bottom:12px;" id="bulkCloseCount"></p>
+      <div class="field">
+        <label>Comentario de cierre (opcional)</label>
+        <textarea id="bulkCloseComment" rows="4" placeholder="Ej. Resuelto tras reinicio del equipo, se confirmó restablecimiento del servicio con el cliente."></textarea>
+        <div class="hint">Se agregará como comentario a cada ticket seleccionado.</div>
+      </div>
+      <label style="font-size:12.5px;color:var(--text-2);display:flex;align-items:center;gap:6px;margin-top:6px;">
+        <input type="checkbox" id="bulkCloseInternal" checked> Nota interna (desmarca si es una respuesta visible para el cliente)
+      </label>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelBulkClose">Cancelar</button><button class="btn btn-primary" id="confirmBulkClose">Cerrar tickets</button></div>
+  </div>
+</div>
+
 <div class="toast-wrap" id="toastWrap"></div>
 
 <script>
@@ -758,6 +808,8 @@ const STATUS_BY_TYPE = {
   cambio: ['nuevo','en_espera_cliente','aprobado','rechazado','programado','en_progreso','implementado','cerrado','cancelado']
 };
 const TYPE_LABELS = {incidente:'Incidente', solicitud:'Solicitud', problema:'Problema', cambio:'Cambio'};
+const LINE_LABELS = {l1:'1ª línea (NOC)', l2:'2ª línea', l3:'3ª línea (Sistemas)'};
+const LINE_SHORT = {l1:'1ª línea', l2:'2ª línea', l3:'3ª línea'};
 const SOURCE_LABELS = {telefono:'Teléfono',email:'Email',portal:'Portal',chat:'Chat',monitoreo_prtg:'Monitoreo PRTG',whatsapp:'WhatsApp',presencial:'Presencial'};
 const ROLE_LABELS = {admin:'Administrador', agente_noc:'Agente NOC', agente_especialista:'Agente especialista'};
 
@@ -1073,6 +1125,7 @@ async function renderDashboard(){
   renderRecentTickets();
   renderSlaGauge(sla30);
   renderTypeChart();
+  renderLineChart();
 }
 
 function renderRecentTickets(){
@@ -1090,7 +1143,7 @@ function renderRecentTickets(){
     </tr>`).join('');
 }
 
-let chartSla, chartType;
+let chartSla, chartType, chartLine;
 function renderSlaGauge(sla30){
   const ctx = document.getElementById('chartSlaGauge').getContext('2d');
   const pct = sla30?.pct_cumplimiento_resolucion ?? 100;
@@ -1116,11 +1169,22 @@ function renderTypeChart(){
     options:{ plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false, scales:{y:{beginAtZero:true, ticks:{precision:0}}} }
   });
 }
+function renderLineChart(){
+  const ctx = document.getElementById('chartByLine').getContext('2d');
+  const counts = {l1:0, l2:0, l3:0};
+  STATE.tickets.forEach(t=>{ if(!['resuelto','cerrado','cancelado','rechazado'].includes(t.status)) counts[t.support_line||'l1']++; });
+  if(chartLine) chartLine.destroy();
+  chartLine = new Chart(ctx, {
+    type:'bar',
+    data:{ labels:Object.keys(counts).map(k=>LINE_LABELS[k]), datasets:[{data:Object.values(counts), backgroundColor:['#2454C7','#B58900','#6D28D9'], borderRadius:6}] },
+    options:{ indexAxis:'y', plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false, scales:{x:{beginAtZero:true, ticks:{precision:0}}} }
+  });
+}
 
 /* =========================================================
-   TABLA DE TICKETS + FILTROS
+   TABLA DE TICKETS + FILTROS + SELECCIÓN MASIVA
 ========================================================= */
-['fSearch','fType','fStatus','fPriority','fClient','fAgent'].forEach(id=>{
+['fSearch','fType','fStatus','fPriority','fLine','fClient','fAgent'].forEach(id=>{
   document.getElementById(id).addEventListener('input', renderTicketsTable);
   document.getElementById(id).addEventListener('change', renderTicketsTable);
 });
@@ -1131,11 +1195,14 @@ document.getElementById('fType').addEventListener('change', ()=>{
   statusSel.innerHTML = '<option value="">Todos los estados</option>' + [...new Set(statuses)].map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join('');
 });
 
+let selectedTicketIds = new Set();
+
 function renderTicketsTable(){
   const q = document.getElementById('fSearch').value.toLowerCase();
   const type = document.getElementById('fType').value;
   const status = document.getElementById('fStatus').value;
   const priority = document.getElementById('fPriority').value;
+  const line = document.getElementById('fLine').value;
   const client = document.getElementById('fClient').value;
   const agent = document.getElementById('fAgent').value;
 
@@ -1143,27 +1210,101 @@ function renderTicketsTable(){
     if(type && t.ticket_type!==type) return false;
     if(status && t.status!==status) return false;
     if(priority && t.priority!==priority) return false;
+    if(line && (t.support_line||'l1')!==line) return false;
     if(client && t.client_id!==client) return false;
     if(agent && t.assigned_agent_id!==agent) return false;
     if(q && !(t.ticket_number.toLowerCase().includes(q) || t.title.toLowerCase().includes(q) || (t.clients?.name||'').toLowerCase().includes(q))) return false;
     return true;
   });
 
+  // limpiar selección de tickets que ya no están visibles
+  const visibleIds = new Set(filtered.map(t=>t.id));
+  [...selectedTicketIds].forEach(id=>{ if(!visibleIds.has(id)) selectedTicketIds.delete(id); });
+
   const tbody = document.querySelector('#ticketsTable tbody');
   document.getElementById('ticketsEmpty').style.display = filtered.length===0 ? 'block':'none';
   tbody.innerHTML = filtered.map(t=>`
-    <tr onclick="openTicketDrawer('${t.id}')">
-      <td class="ticket-id">${t.ticket_number}</td>
-      <td><span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span></td>
-      <td>${escapeHtml(t.title)}</td>
-      <td>${t.clients?.name || '—'}</td>
-      <td><span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span></td>
-      <td><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
-      <td>${t.agents?.full_name || '—'}</td>
-      <td>${slaChipHtml(t)}</td>
-      <td style="color:var(--text-3);">${fmtDateShort(t.created_at)}</td>
+    <tr>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="ticket-select-cb" data-id="${t.id}" ${selectedTicketIds.has(t.id)?'checked':''} ${['cerrado','cancelado'].includes(t.status)?'disabled title="Ya está cerrado"':''}></td>
+      <td class="ticket-id" onclick="openTicketDrawer('${t.id}')">${t.ticket_number}</td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.title)}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${t.clients?.name || '—'}</td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status">${LINE_SHORT[t.support_line||'l1']}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')">${t.agents?.full_name || '—'}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${slaChipHtml(t)}</td>
+      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.created_at)}</td>
     </tr>`).join('');
+
+  tbody.querySelectorAll('.ticket-select-cb').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      if(cb.checked) selectedTicketIds.add(cb.dataset.id); else selectedTicketIds.delete(cb.dataset.id);
+      updateBulkBar();
+    });
+  });
+  document.getElementById('fSelectAll').checked = false;
+  updateBulkBar();
 }
+
+function updateBulkBar(){
+  const bar = document.getElementById('bulkActionBar');
+  const count = selectedTicketIds.size;
+  if(count > 0){
+    bar.style.display = 'flex';
+    document.getElementById('bulkSelectedCount').textContent = `${count} ticket${count>1?'s':''} seleccionado${count>1?'s':''}`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+document.getElementById('fSelectAll').addEventListener('change', (e)=>{
+  document.querySelectorAll('.ticket-select-cb:not(:disabled)').forEach(cb=>{
+    cb.checked = e.target.checked;
+    if(e.target.checked) selectedTicketIds.add(cb.dataset.id); else selectedTicketIds.delete(cb.dataset.id);
+  });
+  updateBulkBar();
+});
+document.getElementById('btnBulkClear').addEventListener('click', ()=>{
+  selectedTicketIds.clear();
+  renderTicketsTable();
+});
+document.getElementById('btnBulkClose').addEventListener('click', ()=>{
+  const ids = [...selectedTicketIds];
+  if(ids.length===0) return;
+  document.getElementById('bulkCloseCount').textContent = `Vas a cerrar ${ids.length} ticket${ids.length>1?'s':''}. Esta acción marcará su estado como Cerrado.`;
+  document.getElementById('bulkCloseComment').value = '';
+  document.getElementById('bulkCloseInternal').checked = true;
+  document.getElementById('bulkCloseModal').classList.add('active');
+});
+document.getElementById('closeBulkCloseModal').addEventListener('click', ()=>document.getElementById('bulkCloseModal').classList.remove('active'));
+document.getElementById('cancelBulkClose').addEventListener('click', ()=>document.getElementById('bulkCloseModal').classList.remove('active'));
+document.getElementById('confirmBulkClose').addEventListener('click', async ()=>{
+  const ids = [...selectedTicketIds];
+  if(ids.length===0) return;
+  const comment = document.getElementById('bulkCloseComment').value.trim();
+  const isInternal = document.getElementById('bulkCloseInternal').checked;
+  const btn = document.getElementById('confirmBulkClose');
+  btn.disabled = true; btn.textContent = 'Cerrando...';
+  try{
+    const { error } = await sb.rpc('bulk_close_tickets', {
+      ticket_ids: ids,
+      closing_comment: comment || null,
+      comment_agent_id: STATE.agent.id,
+      comment_internal: isInternal,
+    });
+    if(error) throw error;
+    toast(`${ids.length} ticket(s) cerrados`);
+    selectedTicketIds.clear();
+    document.getElementById('bulkCloseModal').classList.remove('active');
+    await loadTickets();
+  }catch(err){
+    toast('Error: '+err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Cerrar tickets';
+  }
+});
 
 function escapeHtml(s){ if(s==null) return ''; return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -1179,6 +1320,7 @@ function openNewTicketModal(defaultType){
   document.getElementById('ntImpact').value='medio'; document.getElementById('ntUrgency').value='medio';
   document.getElementById('ntSource').value='monitoreo_prtg';
   document.getElementById('ntAssign').value='';
+  document.getElementById('ntSupportLine').value='l1';
   updatePriorityPreview();
   renderCategoryOptions();
   renderTemplatePicker();
@@ -1263,6 +1405,7 @@ document.getElementById('submitNewTicket').addEventListener('click', async ()=>{
       source: document.getElementById('ntSource').value,
       reported_by: document.getElementById('ntReportedBy').value,
       assigned_agent_id: document.getElementById('ntAssign').value || null,
+      support_line: document.getElementById('ntSupportLine').value,
       created_by_agent_id: STATE.agent.id,
       status: STATE.newTicketType==='cambio' ? 'nuevo' : (document.getElementById('ntAssign').value ? 'asignado' : 'nuevo'),
     };
@@ -1347,6 +1490,13 @@ function renderTicketDrawerBody(t, comments){
         <select id="drAssign"><option value="">Sin asignar</option>${STATE.agents.map(a=>`<option value="${a.id}" ${a.id===t.assigned_agent_id?'selected':''}>${a.full_name}</option>`).join('')}</select>
       </div>
     </div>
+    <div class="field" style="margin-bottom:16px;"><label>Línea de soporte</label>
+      <select id="drSupportLine">
+        <option value="l1" ${(t.support_line||'l1')==='l1'?'selected':''}>1ª línea (NOC)</option>
+        <option value="l2" ${t.support_line==='l2'?'selected':''}>2ª línea</option>
+        <option value="l3" ${t.support_line==='l3'?'selected':''}>3ª línea (Sistemas)</option>
+      </select>
+    </div>
     <button class="btn btn-primary btn-sm" id="drSaveBtn" style="margin-bottom:20px;">Guardar cambios</button>
 
     <h3 style="font-size:13.5px;margin-bottom:10px;">Bitácora / comentarios</h3>
@@ -1373,7 +1523,8 @@ function renderTicketDrawerBody(t, comments){
 async function saveTicketUpdates(t){
   const newStatus = document.getElementById('drStatus').value;
   const newAgent = document.getElementById('drAssign').value || null;
-  const patch = {status:newStatus, assigned_agent_id:newAgent};
+  const newLine = document.getElementById('drSupportLine').value;
+  const patch = {status:newStatus, assigned_agent_id:newAgent, support_line:newLine};
   if(['resuelto'].includes(newStatus) && !t.resolved_at) patch.resolved_at = new Date().toISOString();
   if(['cerrado'].includes(newStatus) && !t.closed_at) patch.closed_at = new Date().toISOString();
   if(!t.first_response_at && newStatus!=='nuevo') patch.first_response_at = new Date().toISOString();
@@ -1711,21 +1862,59 @@ document.getElementById('btnHaloRaw').addEventListener('click', async ()=>{
   }
 });
 
-document.getElementById('btnHaloSync').addEventListener('click', async ()=>{
+document.getElementById('btnHaloPreview').addEventListener('click', async ()=>{
   const out = document.getElementById('haloResult');
-  const btn = document.getElementById('btnHaloSync');
-  btn.disabled = true; btn.textContent = 'Sincronizando...';
-  out.textContent = 'Obteniendo tickets desde HaloITSM, esto puede tardar unos segundos...';
+  const btn = document.getElementById('btnHaloPreview');
+  btn.disabled = true; btn.textContent = 'Consultando...';
+  document.getElementById('haloPreviewPanel').style.display = 'none';
+  out.textContent = 'Obteniendo tickets desde HaloITSM para vista previa...';
   try{
-    const data = await callHalo('sync', { pageSize: 50, maxPages: 10 });
+    const data = await callHalo('sync', { pageSize: 50, maxPages: 10, dryRun: true });
+    out.textContent = `Se encontraron ${data.fetched} tickets en HaloITSM. Revisa la vista previa abajo antes de confirmar.`;
+    renderHaloPreview(data.preview, data.fetched);
+  }catch(err){
+    out.textContent = '✖ '+err.message;
+    toast('Falló la vista previa');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Ver vista previa de sincronización';
+  }
+});
+
+function renderHaloPreview(rows, total){
+  document.getElementById('haloPreviewTotal').textContent = total;
+  const cols = [
+    {k:'external_ref', l:'Folio'}, {k:'ticket_type', l:'Tipo'}, {k:'title', l:'Título'},
+    {k:'status', l:'Estado'}, {k:'priority', l:'Prioridad'}, {k:'client_name', l:'Cliente'},
+    {k:'agent_name', l:'Agente'}, {k:'created_at', l:'Creado'},
+  ];
+  const thead = document.querySelector('#haloPreviewTable thead');
+  const tbody = document.querySelector('#haloPreviewTable tbody');
+  thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c.l}</th>`).join('')+'</tr>';
+  tbody.innerHTML = (rows||[]).map(r=>'<tr>'+cols.map(c=>`<td>${escapeHtml(r[c.k]??'')}</td>`).join('')+'</tr>').join('') ||
+    `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--text-3);padding:16px;">No se encontraron tickets</td></tr>`;
+  document.getElementById('haloPreviewPanel').style.display = 'block';
+}
+
+document.getElementById('btnHaloCancelPreview').addEventListener('click', ()=>{
+  document.getElementById('haloPreviewPanel').style.display = 'none';
+});
+
+document.getElementById('btnHaloConfirmSync').addEventListener('click', async ()=>{
+  const out = document.getElementById('haloResult');
+  const btn = document.getElementById('btnHaloConfirmSync');
+  btn.disabled = true; btn.textContent = 'Importando...';
+  out.textContent = 'Importando tickets confirmados...';
+  try{
+    const data = await callHalo('sync', { pageSize: 50, maxPages: 10, dryRun: false });
     out.textContent = `✔ Sincronización completa: ${data.fetched} tickets leídos de HaloITSM, ${data.imported} importados, ${data.skipped_existing} ya existían, ${data.clientsCreated} clientes nuevos creados.`;
     toast(`Sincronizados ${data.imported} tickets nuevos`);
+    document.getElementById('haloPreviewPanel').style.display = 'none';
     await loadAll();
   }catch(err){
     out.textContent = '✖ '+err.message;
     toast('Falló la sincronización');
   }finally{
-    btn.disabled = false; btn.textContent = 'Sincronizar tickets ahora';
+    btn.disabled = false; btn.textContent = 'Confirmar e importar todos';
   }
 });
 
