@@ -478,17 +478,43 @@ label.req::after{content:' *';color:var(--danger);}
     <!-- ================= IMPORTAR ================= -->
     <div class="view" id="view-import">
       <div class="topbar">
-        <div><h2>Importar tickets</h2><div class="sub">Carga histórica desde HaloITSM u otro sistema (archivo CSV)</div></div>
+        <div><h2>Importar tickets</h2><div class="sub">Sincronización con HaloITSM o carga histórica por CSV</div></div>
       </div>
 
       <div class="panel">
-        <h3>1. Sube tu archivo CSV</h3>
-        <p class="hint" style="margin-bottom:10px;">Exporta tus reportes desde HaloITSM a CSV y súbelo aquí. La primera fila debe contener los encabezados de columna.</p>
+        <div class="panel-flex">
+          <h3>Integración HaloITSM <span id="haloStatusPill" class="pill pill-status" style="margin-left:8px;">Verificando…</span></h3>
+        </div>
+        <p class="hint" style="margin-bottom:14px;">Conexión directa y segura: las credenciales de HaloITSM viven solo en el servidor (Supabase Edge Function), nunca en el navegador. Se sincronizan automáticamente los tickets nuevos, evitando duplicados por folio original.</p>
+        <div id="haloNotConfigured" style="display:none;">
+          <p class="hint" style="background:var(--warning-bg);color:var(--warning);padding:10px 12px;border-radius:8px;margin-bottom:12px;">Aún faltan credenciales por configurar del lado del servidor. Sigue estos pasos:</p>
+          <ol style="font-size:12.5px;color:var(--text-2);line-height:1.8;padding-left:18px;margin:0 0 14px;">
+            <li>En HaloITSM: <strong>Configuración → Integraciones → HaloITSM API</strong> → crea una aplicación con método de autenticación <strong>"Client ID and Secret (Services)"</strong> y copia el Client ID, Client Secret y la URL de tu instancia.</li>
+            <li>En tu proyecto de Supabase: <strong>Project Settings → Edge Functions → Secrets</strong>, agrega estas 4 claves:
+              <div class="desc-box" style="margin-top:6px;font-family:var(--font-mono);font-size:11.5px;">HALO_AUTH_URL = https://tuempresa.haloitsm.com/auth/token
+HALO_RESOURCE_URL = https://tuempresa.haloitsm.com
+HALO_CLIENT_ID = (tu client id)
+HALO_CLIENT_SECRET = (tu client secret)</div>
+            </li>
+            <li>Vuelve aquí y da clic en "Probar conexión".</li>
+          </ol>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" id="btnHaloTest">Probar conexión</button>
+          <button class="btn btn-ghost btn-sm" id="btnHaloRaw">Ver datos crudos (diagnóstico)</button>
+          <button class="btn btn-primary btn-sm" id="btnHaloSync">Sincronizar tickets ahora</button>
+        </div>
+        <div id="haloResult" style="margin-top:12px;font-size:12.5px;color:var(--text-2);white-space:pre-wrap;"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-flex"><h3>Carga manual por CSV</h3></div>
+        <p class="hint" style="margin-bottom:10px;">Alternativa si prefieres exportar un CSV desde HaloITSM (u otro sistema) en vez de sincronizar por API.</p>
         <input type="file" id="importFile" accept=".csv">
       </div>
 
       <div class="panel" id="importMapPanel" style="display:none;">
-        <h3>2. Relaciona las columnas de tu CSV con los campos del sistema</h3>
+        <h3>Relaciona las columnas de tu CSV con los campos del sistema</h3>
         <div id="importMapGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;"></div>
 
         <div class="row-3" style="margin-top:16px;">
@@ -510,18 +536,13 @@ label.req::after{content:' *';color:var(--danger);}
       </div>
 
       <div class="panel" id="importPreviewPanel" style="display:none;">
-        <h3>3. Vista previa (primeras 8 filas de <span id="importTotalRows">0</span>)</h3>
+        <h3>Vista previa (primeras 8 filas de <span id="importTotalRows">0</span>)</h3>
         <div style="overflow-x:auto;"><table id="importPreviewTable"><thead></thead><tbody></tbody></table></div>
         <div style="display:flex;gap:8px;margin-top:16px;">
           <button class="btn btn-primary" id="btnConfirmImport">Importar todos los tickets</button>
           <button class="btn btn-ghost" id="btnCancelImport">Cancelar</button>
         </div>
         <div id="importProgress" style="margin-top:12px;font-size:12.5px;color:var(--text-2);"></div>
-      </div>
-
-      <div class="panel">
-        <h3>¿Prefieres conectar HaloITSM directamente por API?</h3>
-        <p class="hint">También puedo construir una sincronización automática contra la API de HaloITSM (sin exponer tus credenciales en el navegador, usando una función segura del lado del servidor). Para eso necesito la URL de tu instancia y unas credenciales de API con permiso de solo lectura sobre reportes/tickets. Mientras tanto, la carga por CSV es inmediata y no requiere nada de tu lado más que el archivo exportado.</p>
       </div>
     </div>
 
@@ -912,6 +933,7 @@ function switchView(view){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+view).classList.add('active');
   if(view==='reports') renderReports();
+  if(view==='import') checkHaloStatus();
 }
 
 /* =========================================================
@@ -1625,6 +1647,86 @@ document.getElementById('submitInvite').addEventListener('click', async ()=>{
   toast('Invitación creada para '+email);
   document.getElementById('inviteModal').classList.remove('active');
   await loadAll();
+});
+
+/* =========================================================
+   INTEGRACIÓN HALOITSM (Edge Function segura)
+========================================================= */
+async function callHalo(action, extra = {}) {
+  const { data, error } = await sb.functions.invoke('haloitsm-sync', { body: { action, ...extra } });
+  if (error) {
+    let msg = error.message || 'Error desconocido';
+    try {
+      const ctx = await error.context?.json?.();
+      if (ctx?.error) msg = ctx.error;
+    } catch(e) {}
+    throw new Error(msg);
+  }
+  if (data?.error) throw new Error(data.error);
+  return data;
+}
+
+async function checkHaloStatus(){
+  const pill = document.getElementById('haloStatusPill');
+  const notConfigured = document.getElementById('haloNotConfigured');
+  try{
+    const data = await callHalo('status');
+    if(data.configured){
+      pill.textContent = 'Configurado';
+      pill.className = 'pill pill-status st-resuelto';
+      notConfigured.style.display = 'none';
+    } else {
+      pill.textContent = 'Sin configurar';
+      pill.className = 'pill pill-status st-cancelado';
+      notConfigured.style.display = 'block';
+    }
+  }catch(err){
+    pill.textContent = 'No disponible';
+    pill.className = 'pill pill-status st-cancelado';
+    document.getElementById('haloResult').textContent = 'No se pudo verificar el estado: '+err.message;
+  }
+}
+
+document.getElementById('btnHaloTest').addEventListener('click', async ()=>{
+  const out = document.getElementById('haloResult');
+  out.textContent = 'Probando conexión...';
+  try{
+    const data = await callHalo('test');
+    out.textContent = `✔ ${data.message}` + (data.record_count!=null ? ` — ${data.record_count} tickets encontrados en HaloITSM.` : '');
+    toast('Conexión con HaloITSM exitosa');
+  }catch(err){
+    out.textContent = '✖ '+err.message;
+    toast('Falló la prueba de conexión');
+  }
+});
+
+document.getElementById('btnHaloRaw').addEventListener('click', async ()=>{
+  const out = document.getElementById('haloResult');
+  out.textContent = 'Consultando datos de muestra...';
+  try{
+    const data = await callHalo('raw');
+    out.textContent = JSON.stringify(data.raw, null, 2).slice(0, 3000);
+  }catch(err){
+    out.textContent = '✖ '+err.message;
+  }
+});
+
+document.getElementById('btnHaloSync').addEventListener('click', async ()=>{
+  const out = document.getElementById('haloResult');
+  const btn = document.getElementById('btnHaloSync');
+  btn.disabled = true; btn.textContent = 'Sincronizando...';
+  out.textContent = 'Obteniendo tickets desde HaloITSM, esto puede tardar unos segundos...';
+  try{
+    const data = await callHalo('sync', { pageSize: 50, maxPages: 10 });
+    out.textContent = `✔ Sincronización completa: ${data.fetched} tickets leídos de HaloITSM, ${data.imported} importados, ${data.skipped_existing} ya existían, ${data.clientsCreated} clientes nuevos creados.`;
+    toast(`Sincronizados ${data.imported} tickets nuevos`);
+    await loadAll();
+  }catch(err){
+    out.textContent = '✖ '+err.message;
+    toast('Falló la sincronización');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Sincronizar tickets ahora';
+  }
 });
 
 /* =========================================================
