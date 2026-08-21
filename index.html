@@ -181,6 +181,42 @@ input,select,textarea{font-family:inherit;font-size:14px;}
 
 .grid-2{display:grid;grid-template-columns:1.3fr .9fr;gap:16px;}
 @media(max-width:1000px){.grid-2{grid-template-columns:1fr;}}
+
+.tickets-layout{display:grid;grid-template-columns:230px 1fr;gap:16px;align-items:start;}
+@media(max-width:900px){.tickets-layout{grid-template-columns:1fr;}}
+.group-panel{padding:10px 8px;}
+.grp-node{border-radius:8px;overflow:hidden;}
+.grp-head{
+  display:flex;align-items:center;gap:7px;padding:8px 8px;border-radius:8px;cursor:pointer;
+  font-size:12.5px;font-weight:600;color:var(--text);transition:background .12s;
+}
+.grp-head:hover{background:var(--surface-2);}
+.grp-head.active{background:var(--primary-light);color:var(--primary);}
+.grp-head .tri{width:12px;font-size:9px;color:var(--text-3);transition:transform .12s;flex-shrink:0;}
+.grp-head.collapsed .tri{transform:rotate(-90deg);}
+.grp-head .grp-icon{font-size:13px;flex-shrink:0;}
+.grp-head .grp-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.grp-count{
+  background:var(--slate-bg);color:var(--text-2);font-size:11px;font-weight:700;
+  border-radius:20px;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;padding:0 6px;flex-shrink:0;
+}
+.grp-head.active .grp-count{background:var(--primary);color:#fff;}
+.grp-children{padding-left:20px;}
+.grp-child{
+  display:flex;align-items:center;gap:7px;padding:6px 8px;border-radius:7px;cursor:pointer;
+  font-size:12px;color:var(--text-2);transition:background .12s;
+}
+.grp-child:hover{background:var(--surface-2);}
+.grp-child.active{background:var(--primary-light);color:var(--primary);font-weight:600;}
+.grp-child .grp-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.grp-sla{
+  display:flex;align-items:center;gap:7px;padding:9px 8px;border-radius:8px;cursor:pointer;
+  font-size:12.5px;font-weight:600;color:var(--danger);margin-top:6px;border-top:1px solid var(--border);padding-top:14px;
+}
+.grp-sla:hover{background:var(--danger-bg);}
+.grp-sla.active{background:var(--danger-bg);}
+.grp-sla .grp-count{background:var(--danger-bg);color:var(--danger);}
+.grp-sla.active .grp-count{background:var(--danger);color:#fff;}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px;}
 .panel h3{margin:0 0 14px;font-size:14.5px;font-weight:700;}
 .panel-flex{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
@@ -403,29 +439,55 @@ label.req::after{content:' *';color:var(--danger);}
         <div><h2>Tickets</h2><div class="sub">Incidentes, solicitudes, problemas y cambios</div></div>
         <div class="topbar-actions"><button class="btn btn-primary" id="btnNewTicket">+ Nuevo ticket</button></div>
       </div>
-      <div class="panel">
-        <div class="filters">
-          <div class="search-input"><input type="text" id="fSearch" placeholder="Buscar por folio, título o cliente..."></div>
-          <select id="fType"><option value="">Todos los tipos</option><option value="incidente">Incidente</option><option value="solicitud">Solicitud</option><option value="problema">Problema</option><option value="cambio">Cambio</option></select>
-          <select id="fStatus"><option value="">Todos los estados</option></select>
-          <select id="fPriority"><option value="">Toda prioridad</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option><option value="P4">P4</option></select>
-          <select id="fLine"><option value="">Toda línea</option><option value="l1">1ª línea (NOC)</option><option value="l2">2ª línea</option><option value="l3">3ª línea (Sistemas)</option></select>
-          <select id="fClient"><option value="">Todos los clientes</option></select>
-          <select id="fAgent"><option value="">Todos los agentes</option></select>
-        </div>
-        <div id="bulkActionBar" style="display:none;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:8px 12px;margin-bottom:12px;align-items:center;justify-content:space-between;">
-          <span id="bulkSelectedCount" style="font-size:12.5px;font-weight:600;color:var(--primary);"></span>
-          <div style="display:flex;gap:8px;">
-            <button class="btn btn-primary btn-sm" id="btnBulkClose">Cerrar seleccionados</button>
-            <button class="btn btn-ghost btn-sm" id="btnBulkClear">Cancelar selección</button>
+
+      <div class="tab-strip" id="ticketsTypeTabs">
+        <button class="tab-btn active" data-ttype="">Todos</button>
+        <button class="tab-btn" data-ttype="incidente">Incidentes</button>
+        <button class="tab-btn" data-ttype="solicitud">Solicitudes</button>
+        <button class="tab-btn" data-ttype="problema">Problemas</button>
+        <button class="tab-btn" data-ttype="cambio">Cambios</button>
+      </div>
+
+      <div class="tickets-layout">
+        <div class="panel group-panel" id="ticketsGroupPanel"></div>
+
+        <div class="panel" style="min-width:0;">
+          <div class="filters">
+            <div class="search-input"><input type="text" id="fSearch" placeholder="Buscar por folio, título, cliente, usuario, sitio..."></div>
+            <select id="fStatus"><option value="">Todos los estados</option></select>
+            <select id="fPriority"><option value="">Toda prioridad</option><option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option><option value="P4">P4</option></select>
+            <select id="fClient"><option value="">Todos los clientes</option></select>
+            <button class="btn btn-ghost btn-sm" id="btnMoreFilters" type="button">Más filtros ▾</button>
           </div>
-        </div>
-        <table id="ticketsTable"><thead><tr>
-          <th style="width:28px;"><input type="checkbox" id="fSelectAll"></th>
-          <th>Folio</th><th>Tipo</th><th>Título</th><th>Cliente</th><th>Línea</th><th>Prioridad</th><th>Estado</th><th>Agente</th><th>SLA resolución</th><th>Creado</th>
-        </tr></thead><tbody></tbody></table>
-        <div class="empty-state" id="ticketsEmpty" style="display:none;">
-          <div class="big">▤</div><p><strong>No hay tickets que coincidan</strong></p><p>Ajusta los filtros o crea un nuevo ticket.</p>
+          <div class="filters" id="moreFiltersRow" style="display:none;">
+            <select id="fCategory"><option value="">Toda categoría</option></select>
+            <select id="fImpact"><option value="">Todo impacto</option><option value="alto">Alto</option><option value="medio">Medio</option><option value="bajo">Bajo</option></select>
+            <select id="fUrgency"><option value="">Toda urgencia</option><option value="alto">Alto</option><option value="medio">Medio</option><option value="bajo">Bajo</option></select>
+            <select id="fArchitecture"><option value="">Toda arquitectura</option></select>
+            <select id="fSite"><option value="">Todo sitio</option></select>
+            <select id="fLocality"><option value="">Toda localidad</option></select>
+            <select id="fTicketTypeLabel"><option value="">Todo tipo de ticket</option></select>
+          </div>
+          <div id="groupFilterChip" style="display:none;margin-bottom:12px;"></div>
+          <div id="bulkActionBar" style="display:none;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:8px 12px;margin-bottom:12px;align-items:center;justify-content:space-between;">
+            <span id="bulkSelectedCount" style="font-size:12.5px;font-weight:600;color:var(--primary);"></span>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-primary btn-sm" id="btnBulkClose">Cerrar seleccionados</button>
+              <button class="btn btn-ghost btn-sm" id="btnBulkClear">Cancelar selección</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+          <table id="ticketsTable"><thead><tr>
+            <th style="width:28px;"><input type="checkbox" id="fSelectAll"></th>
+            <th>ID</th><th>SLA restante</th><th>Resumen</th><th>Agente</th><th>Categoría</th><th>Organización</th>
+            <th>Línea</th><th>Prioridad</th><th>Impacto</th><th>Urgencia</th><th>Fecha del informe</th><th>Usuario</th>
+            <th>Antigüedad</th><th>Estado</th><th>Objetivo de resolución</th><th>% SLA</th><th>Tipo ITIL</th><th>Tipo de Ticket</th>
+            <th>Arquitectura</th><th>Sitio</th><th>Localidad</th><th>Fecha de cierre</th>
+          </tr></thead><tbody></tbody></table>
+          </div>
+          <div class="empty-state" id="ticketsEmpty" style="display:none;">
+            <div class="big">▤</div><p><strong>No hay tickets que coincidan</strong></p><p>Ajusta los filtros o crea un nuevo ticket.</p>
+          </div>
         </div>
       </div>
     </div>
@@ -568,6 +630,12 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
         </div>
         <div id="importProgress" style="margin-top:12px;font-size:12.5px;color:var(--text-2);"></div>
       </div>
+
+      <div class="panel" style="border-color:var(--danger);">
+        <h3 style="color:var(--danger);">Zona de peligro</h3>
+        <p class="hint" style="margin-bottom:12px;">Elimina permanentemente <strong>todo</strong> el historial de tickets (incluyendo comentarios y bitácora) para poder reimportar desde cero — por ejemplo, si una sincronización o carga de CSV salió mal. Los clientes, agentes, plantillas y políticas SLA no se ven afectados. Esta acción no se puede deshacer.</p>
+        <button class="btn btn-danger btn-sm" id="btnOpenResetTickets">Eliminar todo el historial de tickets</button>
+      </div>
     </div>
 
     <!-- ================= REPORTES ================= -->
@@ -636,6 +704,19 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
         </select></div>
       </div>
       <div class="field"><label>Descripción</label><textarea id="ntDescription" rows="7"></textarea></div>
+      <div class="tab-strip" style="margin-top:4px;">
+        <button type="button" class="tab-btn active" id="ntMoreToggle">Detalles adicionales (opcional) ▾</button>
+      </div>
+      <div id="ntMoreFields" style="display:none;">
+        <div class="row-2">
+          <div class="field"><label>Arquitectura</label><input type="text" id="ntArchitecture" placeholder="Ej. Cisco Meraki, Mikrotik"></div>
+          <div class="field"><label>Sitio</label><input type="text" id="ntSite" placeholder="Ej. Sucursal Centro"></div>
+        </div>
+        <div class="row-2">
+          <div class="field"><label>Localidad / Ciudad</label><input type="text" id="ntLocality" placeholder="Ej. Ciudad Victoria, Tamaulipas"></div>
+          <div class="field"><label>Tipo de ticket (etiqueta original)</label><input type="text" id="ntTicketTypeLabel" placeholder="Ej. Alerta de monitoreo"></div>
+        </div>
+      </div>
       <div id="ntChangeFields" style="display:none;">
         <div class="row-2">
           <div class="field"><label>Tipo de cambio</label><select id="ntChangeType"><option value="normal">Normal</option><option value="estandar">Estándar</option><option value="emergencia">Emergencia</option></select></div>
@@ -770,6 +851,23 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
       </label>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" id="cancelBulkClose">Cancelar</button><button class="btn btn-primary" id="confirmBulkClose">Cerrar tickets</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: ELIMINAR HISTORIAL DE TICKETS ============ -->
+<div class="modal-center" id="resetTicketsModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 style="color:var(--danger);">Eliminar todo el historial de tickets</h3><button class="drawer-close" id="closeResetTicketsModal">×</button></div>
+    <div class="modal-body">
+      <p class="hint" style="background:var(--danger-bg);color:var(--danger);padding:10px 12px;border-radius:8px;margin-bottom:14px;">
+        Esto borrará permanentemente TODOS los tickets, comentarios y bitácora del sistema, y reiniciará la numeración de folios. No se puede deshacer.
+      </p>
+      <div class="field">
+        <label>Para confirmar, escribe <strong>ELIMINAR HISTORIAL</strong></label>
+        <input type="text" id="resetTicketsConfirmText" placeholder="ELIMINAR HISTORIAL">
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelResetTickets">Cancelar</button><button class="btn btn-danger" id="confirmResetTickets" disabled>Eliminar todo</button></div>
   </div>
 </div>
 
@@ -1009,7 +1107,6 @@ async function loadAll(){
   populateSelect('ntClient', STATE.clients, 'id','name','Sin asignar');
   populateSelect('ntAssign', activeAgents, 'id','full_name','Sin asignar');
   populateSelect('fClient', STATE.clients, 'id','name','Todos los clientes');
-  populateSelect('fAgent', STATE.agents, 'id','full_name','Todos los agentes');
   populateSelect('clLevel', null,null,null,null); // noop guard
   populateSelect('slaClient', STATE.clients, 'id','name','Global (todos los clientes)');
 
@@ -1034,11 +1131,42 @@ function populateSelect(id, items, valKey, labelKey, placeholder){
 }
 
 async function loadTickets(){
-  const {data, error} = await sb.from('tickets').select('*, clients(name), agents:assigned_agent_id(full_name)').order('created_at', {ascending:false}).limit(500);
+  const {data, error} = await sb.from('tickets').select('*, clients(name), agents:assigned_agent_id(full_name), categories(name, subcategory)').order('created_at', {ascending:false}).limit(500);
   if(error){ console.error(error); return; }
   STATE.tickets = data || [];
+  populateDistinctFilters();
+  renderGroupPanel();
   renderTicketsTable();
   renderDashboard();
+}
+
+/* ---- cálculos: antigüedad y % de SLA consumido ---- */
+function ticketAgeStr(t){
+  const end = t.closed_at || t.resolved_at || Date.now();
+  const ms = new Date(end) - new Date(t.created_at);
+  if(ms < 0) return '—';
+  const mins = Math.floor(ms/60000);
+  if(mins < 60) return mins+'m';
+  const hrs = Math.floor(mins/60);
+  if(hrs < 24) return hrs+'h '+(mins%60)+'m';
+  const days = Math.floor(hrs/24);
+  return days+'d '+(hrs%24)+'h';
+}
+function slaPercentElapsed(t){
+  if(!t.sla_resolution_due) return null;
+  const start = new Date(t.created_at).getTime();
+  const due = new Date(t.sla_resolution_due).getTime();
+  const totalWindow = due - start;
+  if(totalWindow <= 0) return null;
+  const refPoint = t.resolved_at || t.closed_at || Date.now();
+  const elapsed = new Date(refPoint).getTime() - start;
+  return Math.round(Math.min(Math.max(elapsed/totalWindow*100, 0), 999));
+}
+function slaRemainingWithPct(t){
+  const pct = slaPercentElapsed(t);
+  const s = slaStatus(t);
+  if(pct==null) return s.label;
+  return `${pct}% · ${s.label}`;
 }
 
 /* =========================================================
@@ -1182,38 +1310,180 @@ function renderLineChart(){
 }
 
 /* =========================================================
-   TABLA DE TICKETS + FILTROS + SELECCIÓN MASIVA
+   TABLA DE TICKETS + PESTAÑAS DE TIPO + GRUPOS (estilo Halo) + SELECCIÓN MASIVA
 ========================================================= */
-['fSearch','fType','fStatus','fPriority','fLine','fClient','fAgent'].forEach(id=>{
+STATE.ticketsTypeFilter = '';
+STATE.groupFilter = null; // {type:'line', line} | {type:'line_agent', line, agentId} | {type:'sla_breach'}
+STATE.groupCollapsed = {};
+
+document.querySelectorAll('#ticketsTypeTabs .tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#ticketsTypeTabs .tab-btn').forEach(b=>b.classList.toggle('active', b===btn));
+    STATE.ticketsTypeFilter = btn.dataset.ttype;
+    STATE.groupFilter = null;
+    const statusSel = document.getElementById('fStatus');
+    const statuses = STATE.ticketsTypeFilter ? STATUS_BY_TYPE[STATE.ticketsTypeFilter] : Object.keys(STATUS_LABELS);
+    statusSel.innerHTML = '<option value="">Todos los estados</option>' + [...new Set(statuses)].map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join('');
+    renderGroupPanel();
+    renderTicketsTable();
+  });
+});
+
+['fSearch','fStatus','fPriority','fClient'].forEach(id=>{
   document.getElementById(id).addEventListener('input', renderTicketsTable);
   document.getElementById(id).addEventListener('change', renderTicketsTable);
-});
-document.getElementById('fType').addEventListener('change', ()=>{
-  const type = document.getElementById('fType').value;
-  const statusSel = document.getElementById('fStatus');
-  const statuses = type ? STATUS_BY_TYPE[type] : Object.keys(STATUS_LABELS);
-  statusSel.innerHTML = '<option value="">Todos los estados</option>' + [...new Set(statuses)].map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join('');
 });
 
 let selectedTicketIds = new Set();
 
+function computeGroupData(){
+  const typeFilter = STATE.ticketsTypeFilter;
+  const openTickets = STATE.tickets.filter(t=>
+    (!typeFilter || t.ticket_type===typeFilter) && !['resuelto','cerrado','cancelado','rechazado'].includes(t.status)
+  );
+  const lines = {l1:{}, l2:{}, l3:{}};
+  const lineTotals = {l1:0, l2:0, l3:0};
+  openTickets.forEach(t=>{
+    const line = t.support_line || 'l1';
+    lineTotals[line] = (lineTotals[line]||0) + 1;
+    const key = t.assigned_agent_id || '__unassigned__';
+    lines[line][key] = (lines[line][key]||0) + 1;
+  });
+  const slaBreachCount = openTickets.filter(t=> slaStatus(t).cls === 'sla-breach').length;
+  return { lines, lineTotals, slaBreachCount };
+}
+
+function renderGroupPanel(){
+  const { lines, lineTotals, slaBreachCount } = computeGroupData();
+  const agentById = new Map(STATE.agents.map(a=>[a.id, a]));
+  const gf = STATE.groupFilter;
+
+  const linesHtml = ['l1','l2','l3'].map(lineKey=>{
+    const collapsed = !!STATE.groupCollapsed[lineKey];
+    const isLineActive = gf?.type==='line' && gf.line===lineKey;
+    const entries = Object.entries(lines[lineKey]).sort((a,b)=>{
+      if(a[0]==='__unassigned__') return -1;
+      if(b[0]==='__unassigned__') return 1;
+      const an = agentById.get(a[0])?.full_name || '';
+      const bn = agentById.get(b[0])?.full_name || '';
+      return an.localeCompare(bn);
+    });
+    const childrenHtml = entries.map(([key, count])=>{
+      const isUnassigned = key === '__unassigned__';
+      const label = isUnassigned ? 'Sin asignar' : (agentById.get(key)?.full_name || 'Agente');
+      const isActive = gf?.type==='line_agent' && gf.line===lineKey && (gf.agentId||'__unassigned__')===key;
+      return `<div class="grp-child ${isActive?'active':''}" data-line="${lineKey}" data-agent="${isUnassigned?'':key}">
+        <span class="grp-icon">${isUnassigned?'○':'●'}</span>
+        <span class="grp-label">${escapeHtml(label)}</span>
+        <span class="grp-count">${count}</span>
+      </div>`;
+    }).join('');
+    return `<div class="grp-node">
+      <div class="grp-head ${isLineActive?'active':''} ${collapsed?'collapsed':''}" data-line="${lineKey}">
+        <span class="tri" data-toggle="${lineKey}">▾</span>
+        <span class="grp-label">${LINE_LABELS[lineKey]}</span>
+        <span class="grp-count">${lineTotals[lineKey]||0}</span>
+      </div>
+      <div class="grp-children" style="${collapsed?'display:none;':''}">${childrenHtml || '<div class="hint" style="padding:4px 8px;">Sin tickets abiertos</div>'}</div>
+    </div>`;
+  }).join('');
+
+  const slaActive = gf?.type==='sla_breach';
+  document.getElementById('ticketsGroupPanel').innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;padding:4px 8px 10px;">Grupos de soporte</div>
+    ${linesHtml}
+    <div class="grp-sla ${slaActive?'active':''}" id="grpSlaBreach">
+      <span class="grp-icon">⏱</span><span class="grp-label">SLA Sobrepasado</span><span class="grp-count">${slaBreachCount}</span>
+    </div>
+  `;
+
+  document.querySelectorAll('.grp-head').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      const line = el.dataset.line;
+      STATE.groupFilter = (gf?.type==='line' && gf.line===line) ? null : {type:'line', line};
+      renderGroupPanel(); renderTicketsTable();
+    });
+  });
+  document.querySelectorAll('.tri').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const line = el.dataset.toggle;
+      STATE.groupCollapsed[line] = !STATE.groupCollapsed[line];
+      renderGroupPanel();
+    });
+  });
+  document.querySelectorAll('.grp-child').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const line = el.dataset.line, agentId = el.dataset.agent || null;
+      const isSame = gf?.type==='line_agent' && gf.line===line && (gf.agentId||'')===(agentId||'');
+      STATE.groupFilter = isSame ? null : {type:'line_agent', line, agentId};
+      renderGroupPanel(); renderTicketsTable();
+    });
+  });
+  document.getElementById('grpSlaBreach').addEventListener('click', ()=>{
+    STATE.groupFilter = slaActive ? null : {type:'sla_breach'};
+    renderGroupPanel(); renderTicketsTable();
+  });
+}
+
+function renderGroupFilterChip(){
+  const chip = document.getElementById('groupFilterChip');
+  const gf = STATE.groupFilter;
+  if(!gf){ chip.style.display = 'none'; return; }
+  let text = '';
+  if(gf.type==='line') text = `Filtrando: ${LINE_LABELS[gf.line]}`;
+  if(gf.type==='line_agent'){
+    const agentName = gf.agentId ? (STATE.agents.find(a=>a.id===gf.agentId)?.full_name||'Agente') : 'Sin asignar';
+    text = `Filtrando: ${LINE_LABELS[gf.line]} › ${agentName}`;
+  }
+  if(gf.type==='sla_breach') text = 'Filtrando: SLA Sobrepasado';
+  chip.style.display = 'block';
+  chip.innerHTML = `<span class="pill" style="background:var(--primary-light);color:var(--primary);">${text} <a href="#" id="clearGroupFilter" style="margin-left:6px;color:var(--primary);font-weight:700;">✕</a></span>`;
+  document.getElementById('clearGroupFilter').addEventListener('click', (e)=>{
+    e.preventDefault();
+    STATE.groupFilter = null;
+    renderGroupPanel(); renderTicketsTable();
+  });
+}
+
 function renderTicketsTable(){
   const q = document.getElementById('fSearch').value.toLowerCase();
-  const type = document.getElementById('fType').value;
+  const type = STATE.ticketsTypeFilter;
   const status = document.getElementById('fStatus').value;
   const priority = document.getElementById('fPriority').value;
-  const line = document.getElementById('fLine').value;
   const client = document.getElementById('fClient').value;
-  const agent = document.getElementById('fAgent').value;
+  const category = document.getElementById('fCategory').value;
+  const impact = document.getElementById('fImpact').value;
+  const urgency = document.getElementById('fUrgency').value;
+  const architecture = document.getElementById('fArchitecture').value;
+  const site = document.getElementById('fSite').value;
+  const locality = document.getElementById('fLocality').value;
+  const ticketTypeLabel = document.getElementById('fTicketTypeLabel').value;
+  const gf = STATE.groupFilter;
 
   let filtered = STATE.tickets.filter(t=>{
     if(type && t.ticket_type!==type) return false;
     if(status && t.status!==status) return false;
     if(priority && t.priority!==priority) return false;
-    if(line && (t.support_line||'l1')!==line) return false;
     if(client && t.client_id!==client) return false;
-    if(agent && t.assigned_agent_id!==agent) return false;
-    if(q && !(t.ticket_number.toLowerCase().includes(q) || t.title.toLowerCase().includes(q) || (t.clients?.name||'').toLowerCase().includes(q))) return false;
+    if(category && t.category_id!==category) return false;
+    if(impact && t.impact!==impact) return false;
+    if(urgency && t.urgency!==urgency) return false;
+    if(architecture && (t.architecture||'')!==architecture) return false;
+    if(site && (t.site||'')!==site) return false;
+    if(locality && (t.locality||'')!==locality) return false;
+    if(ticketTypeLabel && (t.ticket_type_label||'')!==ticketTypeLabel) return false;
+    if(gf){
+      if(gf.type==='line' && (t.support_line||'l1')!==gf.line) return false;
+      if(gf.type==='line_agent'){
+        if((t.support_line||'l1')!==gf.line) return false;
+        if(gf.agentId ? t.assigned_agent_id!==gf.agentId : !!t.assigned_agent_id) return false;
+      }
+      if(gf.type==='sla_breach' && slaStatus(t).cls!=='sla-breach') return false;
+    }
+    if(q && !(t.ticket_number.toLowerCase().includes(q) || t.title.toLowerCase().includes(q) ||
+      (t.clients?.name||'').toLowerCase().includes(q) || (t.reported_by||'').toLowerCase().includes(q) ||
+      (t.site||'').toLowerCase().includes(q) || (t.locality||'').toLowerCase().includes(q))) return false;
     return true;
   });
 
@@ -1221,22 +1491,40 @@ function renderTicketsTable(){
   const visibleIds = new Set(filtered.map(t=>t.id));
   [...selectedTicketIds].forEach(id=>{ if(!visibleIds.has(id)) selectedTicketIds.delete(id); });
 
+  renderGroupFilterChip();
+
   const tbody = document.querySelector('#ticketsTable tbody');
   document.getElementById('ticketsEmpty').style.display = filtered.length===0 ? 'block':'none';
-  tbody.innerHTML = filtered.map(t=>`
+  tbody.innerHTML = filtered.map(t=>{
+    const catLabel = t.categories ? (t.categories.name + (t.categories.subcategory ? ' — '+t.categories.subcategory : '')) : '—';
+    const pct = slaPercentElapsed(t);
+    return `
     <tr>
       <td onclick="event.stopPropagation()"><input type="checkbox" class="ticket-select-cb" data-id="${t.id}" ${selectedTicketIds.has(t.id)?'checked':''} ${['cerrado','cancelado'].includes(t.status)?'disabled title="Ya está cerrado"':''}></td>
       <td class="ticket-id" onclick="openTicketDrawer('${t.id}')">${t.ticket_number}</td>
-      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')">${slaChipHtml(t)}</td>
       <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.title)}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${t.agents?.full_name || '—'}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(catLabel)}</td>
       <td onclick="openTicketDrawer('${t.id}')">${t.clients?.name || '—'}</td>
       <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status">${LINE_SHORT[t.support_line||'l1']}</span></td>
       <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span></td>
-      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
-      <td onclick="openTicketDrawer('${t.id}')">${t.agents?.full_name || '—'}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${slaChipHtml(t)}</td>
+      <td onclick="openTicketDrawer('${t.id}')" style="text-transform:capitalize;">${t.impact||'—'}</td>
+      <td onclick="openTicketDrawer('${t.id}')" style="text-transform:capitalize;">${t.urgency||'—'}</td>
       <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.created_at)}</td>
-    </tr>`).join('');
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.reported_by||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${ticketAgeStr(t)}</td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.sla_resolution_due)}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${pct==null?'—':pct+'%'}</td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.ticket_type_label||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.architecture||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.site||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.locality||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${t.closed_at ? fmtDateShort(t.closed_at) : '—'}</td>
+    </tr>`;
+  }).join('');
 
   tbody.querySelectorAll('.ticket-select-cb').forEach(cb=>{
     cb.addEventListener('change', ()=>{
@@ -1247,6 +1535,35 @@ function renderTicketsTable(){
   document.getElementById('fSelectAll').checked = false;
   updateBulkBar();
 }
+
+function populateDistinctFilters(){
+  const distinct = (key) => [...new Set(STATE.tickets.map(t=>t[key]).filter(Boolean))].sort();
+  const fillOptions = (id, values, placeholder) => {
+    const el = document.getElementById(id);
+    const current = el.value;
+    el.innerHTML = `<option value="">${placeholder}</option>` + values.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
+    if(values.includes(current)) el.value = current;
+  };
+  fillOptions('fArchitecture', distinct('architecture'), 'Toda arquitectura');
+  fillOptions('fSite', distinct('site'), 'Todo sitio');
+  fillOptions('fLocality', distinct('locality'), 'Toda localidad');
+  fillOptions('fTicketTypeLabel', distinct('ticket_type_label'), 'Todo tipo de ticket');
+
+  const catSel = document.getElementById('fCategory');
+  const currentCat = catSel.value;
+  catSel.innerHTML = '<option value="">Toda categoría</option>' + STATE.categories.map(c=>`<option value="${c.id}">${escapeHtml(c.name)}${c.subcategory?' — '+escapeHtml(c.subcategory):''}</option>`).join('');
+  if(currentCat) catSel.value = currentCat;
+}
+
+document.getElementById('btnMoreFilters').addEventListener('click', ()=>{
+  const row = document.getElementById('moreFiltersRow');
+  const showing = row.style.display !== 'none';
+  row.style.display = showing ? 'none' : 'flex';
+  document.getElementById('btnMoreFilters').textContent = showing ? 'Más filtros ▾' : 'Menos filtros ▴';
+});
+['fCategory','fImpact','fUrgency','fArchitecture','fSite','fLocality','fTicketTypeLabel'].forEach(id=>{
+  document.getElementById(id).addEventListener('change', renderTicketsTable);
+});
 
 function updateBulkBar(){
   const bar = document.getElementById('bulkActionBar');
@@ -1326,9 +1643,18 @@ function openNewTicketModal(defaultType){
   renderTemplatePicker();
   toggleChangeFields();
   document.getElementById('ntChecklistPreview').innerHTML='';
+  document.getElementById('ntMoreFields').style.display='none';
+  document.getElementById('ntMoreToggle').textContent='Detalles adicionales (opcional) ▾';
+  ['ntArchitecture','ntSite','ntLocality','ntTicketTypeLabel'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('newTicketModal').classList.add('active');
 }
 document.getElementById('btnNewTicket').addEventListener('click', ()=>openNewTicketModal('incidente'));
+document.getElementById('ntMoreToggle').addEventListener('click', ()=>{
+  const box = document.getElementById('ntMoreFields');
+  const showing = box.style.display !== 'none';
+  box.style.display = showing ? 'none' : 'block';
+  document.getElementById('ntMoreToggle').textContent = showing ? 'Detalles adicionales (opcional) ▾' : 'Detalles adicionales (opcional) ▴';
+});
 document.getElementById('btnNewTicketDash').addEventListener('click', ()=>openNewTicketModal('incidente'));
 document.getElementById('closeNewTicketModal').addEventListener('click', ()=>document.getElementById('newTicketModal').classList.remove('active'));
 document.getElementById('cancelNewTicket').addEventListener('click', ()=>document.getElementById('newTicketModal').classList.remove('active'));
@@ -1406,6 +1732,10 @@ document.getElementById('submitNewTicket').addEventListener('click', async ()=>{
       reported_by: document.getElementById('ntReportedBy').value,
       assigned_agent_id: document.getElementById('ntAssign').value || null,
       support_line: document.getElementById('ntSupportLine').value,
+      architecture: document.getElementById('ntArchitecture').value || null,
+      site: document.getElementById('ntSite').value || null,
+      locality: document.getElementById('ntLocality').value || null,
+      ticket_type_label: document.getElementById('ntTicketTypeLabel').value || null,
       created_by_agent_id: STATE.agent.id,
       status: STATE.newTicketType==='cambio' ? 'nuevo' : (document.getElementById('ntAssign').value ? 'asignado' : 'nuevo'),
     };
@@ -1464,12 +1794,22 @@ function renderTicketDrawerBody(t, comments){
 
     ${t.external_ref ? `<div class="hint" style="margin-bottom:10px;">Folio original (${t.external_source||'sistema externo'}): <strong>${escapeHtml(t.external_ref)}</strong></div>` : ''}
     <div class="detail-grid">
-      <div class="dg-item"><div class="k">Cliente</div><div class="v">${client?.name || '—'}</div></div>
+      <div class="dg-item"><div class="k">Organización</div><div class="v">${client?.name || '—'}</div></div>
+      <div class="dg-item"><div class="k">Categoría</div><div class="v">${t.categories ? escapeHtml(t.categories.name + (t.categories.subcategory?' — '+t.categories.subcategory:'')) : '—'}</div></div>
       <div class="dg-item"><div class="k">Origen</div><div class="v">${SOURCE_LABELS[t.source]||'—'}</div></div>
-      <div class="dg-item"><div class="k">Reportado por</div><div class="v">${t.reported_by || '—'}</div></div>
-      <div class="dg-item"><div class="k">Creado</div><div class="v">${fmtDate(t.created_at)}</div></div>
-      <div class="dg-item"><div class="k">Vence resolución</div><div class="v">${fmtDate(t.sla_resolution_due)}</div></div>
+      <div class="dg-item"><div class="k">Usuario (reportado por)</div><div class="v">${escapeHtml(t.reported_by || '—')}</div></div>
+      <div class="dg-item"><div class="k">Impacto</div><div class="v" style="text-transform:capitalize;">${t.impact||'—'}</div></div>
+      <div class="dg-item"><div class="k">Urgencia</div><div class="v" style="text-transform:capitalize;">${t.urgency||'—'}</div></div>
+      <div class="dg-item"><div class="k">Tipo de ticket (etiqueta)</div><div class="v">${escapeHtml(t.ticket_type_label || '—')}</div></div>
+      <div class="dg-item"><div class="k">Arquitectura</div><div class="v">${escapeHtml(t.architecture || '—')}</div></div>
+      <div class="dg-item"><div class="k">Sitio</div><div class="v">${escapeHtml(t.site || '—')}</div></div>
+      <div class="dg-item"><div class="k">Localidad</div><div class="v">${escapeHtml(t.locality || '—')}</div></div>
+      <div class="dg-item"><div class="k">Fecha del informe</div><div class="v">${fmtDate(t.created_at)}</div></div>
+      <div class="dg-item"><div class="k">Antigüedad del ticket</div><div class="v">${ticketAgeStr(t)}</div></div>
+      <div class="dg-item"><div class="k">Objetivo de resolución</div><div class="v">${fmtDate(t.sla_resolution_due)}</div></div>
+      <div class="dg-item"><div class="k">% de SLA consumido</div><div class="v">${slaPercentElapsed(t)==null?'—':slaPercentElapsed(t)+'%'}</div></div>
       <div class="dg-item"><div class="k">Resuelto</div><div class="v">${t.resolved_at ? fmtDate(t.resolved_at) : '—'}</div></div>
+      <div class="dg-item"><div class="k">Fecha de cierre</div><div class="v">${t.closed_at ? fmtDate(t.closed_at) : '—'}</div></div>
     </div>
 
     ${t.ticket_type==='cambio' ? `
@@ -1801,6 +2141,36 @@ document.getElementById('submitInvite').addEventListener('click', async ()=>{
 });
 
 /* =========================================================
+   ZONA DE PELIGRO: eliminar todo el historial de tickets
+========================================================= */
+document.getElementById('btnOpenResetTickets').addEventListener('click', ()=>{
+  document.getElementById('resetTicketsConfirmText').value = '';
+  document.getElementById('confirmResetTickets').disabled = true;
+  document.getElementById('resetTicketsModal').classList.add('active');
+});
+document.getElementById('closeResetTicketsModal').addEventListener('click', ()=>document.getElementById('resetTicketsModal').classList.remove('active'));
+document.getElementById('cancelResetTickets').addEventListener('click', ()=>document.getElementById('resetTicketsModal').classList.remove('active'));
+document.getElementById('resetTicketsConfirmText').addEventListener('input', (e)=>{
+  document.getElementById('confirmResetTickets').disabled = e.target.value.trim() !== 'ELIMINAR HISTORIAL';
+});
+document.getElementById('confirmResetTickets').addEventListener('click', async ()=>{
+  const btn = document.getElementById('confirmResetTickets');
+  btn.disabled = true; btn.textContent = 'Eliminando...';
+  try{
+    const { error } = await sb.rpc('admin_reset_all_tickets');
+    if(error) throw error;
+    toast('Historial de tickets eliminado. Ya puedes reimportar.');
+    document.getElementById('resetTicketsModal').classList.remove('active');
+    selectedTicketIds.clear();
+    await loadAll();
+  }catch(err){
+    toast('Error: '+err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Eliminar todo';
+  }
+});
+
+/* =========================================================
    INTEGRACIÓN HALOITSM (Edge Function segura)
 ========================================================= */
 async function callHalo(action, extra = {}) {
@@ -1883,9 +2253,9 @@ document.getElementById('btnHaloPreview').addEventListener('click', async ()=>{
 function renderHaloPreview(rows, total){
   document.getElementById('haloPreviewTotal').textContent = total;
   const cols = [
-    {k:'external_ref', l:'Folio'}, {k:'ticket_type', l:'Tipo'}, {k:'title', l:'Título'},
-    {k:'status', l:'Estado'}, {k:'priority', l:'Prioridad'}, {k:'client_name', l:'Cliente'},
-    {k:'agent_name', l:'Agente'}, {k:'created_at', l:'Creado'},
+    {k:'external_ref', l:'Folio'}, {k:'ticket_type', l:'Tipo ITIL'}, {k:'ticket_type_label', l:'Tipo de ticket'}, {k:'title', l:'Título'},
+    {k:'status', l:'Estado'}, {k:'priority', l:'Prioridad'}, {k:'client_name', l:'Organización'},
+    {k:'agent_name', l:'Agente'}, {k:'site', l:'Sitio'}, {k:'locality', l:'Localidad'}, {k:'created_at', l:'Creado'},
   ];
   const thead = document.querySelector('#haloPreviewTable thead');
   const tbody = document.querySelector('#haloPreviewTable tbody');
@@ -1925,16 +2295,20 @@ const IMPORT_FIELDS = [
   {key:'', label:'— No importar —'},
   {key:'external_ref', label:'Folio / ID original'},
   {key:'ticket_type', label:'Tipo (incidente/solicitud/problema/cambio)'},
+  {key:'ticket_type_label', label:'Tipo de ticket (etiqueta original)'},
   {key:'title', label:'Título / Asunto'},
   {key:'description', label:'Descripción'},
-  {key:'client_name', label:'Cliente (nombre)'},
+  {key:'client_name', label:'Cliente / Organización'},
   {key:'status', label:'Estado'},
   {key:'priority', label:'Prioridad (P1-P4)'},
   {key:'impact', label:'Impacto (alto/medio/bajo)'},
   {key:'urgency', label:'Urgencia (alto/medio/bajo)'},
   {key:'agent_name', label:'Agente asignado (nombre o correo)'},
-  {key:'reported_by', label:'Reportado por'},
-  {key:'created_at', label:'Fecha de creación'},
+  {key:'reported_by', label:'Usuario / Reportado por'},
+  {key:'architecture', label:'Arquitectura'},
+  {key:'site', label:'Sitio'},
+  {key:'locality', label:'Localidad / Ciudad'},
+  {key:'created_at', label:'Fecha del informe (creación)'},
   {key:'resolved_at', label:'Fecha de resolución'},
   {key:'closed_at', label:'Fecha de cierre'},
 ];
@@ -1969,8 +2343,12 @@ function guessField(header){
   if(/impact/.test(h)) return 'impact';
   if(/urgenc/.test(h)) return 'urgency';
   if(/agent|t[eé]cnico|assigned|asignado/.test(h)) return 'agent_name';
-  if(/reported|reporta|solicitante|requester/.test(h)) return 'reported_by';
-  if(/created|creaci[oó]n|fecha.*(alta|apertura)/.test(h)) return 'created_at';
+  if(/reported|reporta|solicitante|requester|usuario|user/.test(h)) return 'reported_by';
+  if(/arquitectura|architecture/.test(h)) return 'architecture';
+  if(/sitio|^site/.test(h)) return 'site';
+  if(/localidad|ciudad|city|locality|town/.test(h)) return 'locality';
+  if(/tipo.?de.?ticket|ticket.?type.?label/.test(h)) return 'ticket_type_label';
+  if(/created|creaci[oó]n|fecha.*(alta|apertura|informe)/.test(h)) return 'created_at';
   if(/resolved|resoluci[oó]n/.test(h)) return 'resolved_at';
   if(/closed|cierre/.test(h)) return 'closed_at';
   return '';
@@ -2074,6 +2452,7 @@ function buildImportPayload(row){
     external_ref: m.external_ref || null,
     external_source: 'HaloITSM',
     ticket_type: normType(m.ticket_type, defaultType),
+    ticket_type_label: m.ticket_type_label || null,
     title: m.title || '(Sin título)',
     description: m.description || null,
     client_name: m.client_name || null,
@@ -2081,6 +2460,9 @@ function buildImportPayload(row){
     priority, impact, urgency,
     agent_name: m.agent_name || null,
     reported_by: m.reported_by || null,
+    architecture: m.architecture || null,
+    site: m.site || null,
+    locality: m.locality || null,
     created_at: parseImportDate(m.created_at),
     resolved_at: parseImportDate(m.resolved_at),
     closed_at: parseImportDate(m.closed_at),
@@ -2130,6 +2512,7 @@ document.getElementById('btnConfirmImport').addEventListener('click', async ()=>
       external_ref: p.external_ref,
       external_source: p.external_source,
       ticket_type: p.ticket_type,
+      ticket_type_label: p.ticket_type_label,
       title: p.title,
       description: p.description,
       client_id: p.client_name ? (clientCache.get(p.client_name.toLowerCase()) || null) : null,
@@ -2138,6 +2521,9 @@ document.getElementById('btnConfirmImport').addEventListener('click', async ()=>
       urgency: p.urgency,
       assigned_agent_id: p.agent_name ? (agentCache.get(p.agent_name.toLowerCase()) || null) : null,
       reported_by: p.reported_by,
+      architecture: p.architecture,
+      site: p.site,
+      locality: p.locality,
       created_by_agent_id: STATE.agent.id,
       created_at: p.created_at || undefined,
       resolved_at: p.resolved_at || null,
