@@ -2232,6 +2232,8 @@ document.getElementById('btnHaloRaw').addEventListener('click', async ()=>{
   }
 });
 
+let haloPreviewRows = []; // guarda el set completo (editable) para confirmar sin re-consultar Halo
+
 document.getElementById('btnHaloPreview').addEventListener('click', async ()=>{
   const out = document.getElementById('haloResult');
   const btn = document.getElementById('btnHaloPreview');
@@ -2239,9 +2241,13 @@ document.getElementById('btnHaloPreview').addEventListener('click', async ()=>{
   document.getElementById('haloPreviewPanel').style.display = 'none';
   out.textContent = 'Obteniendo tickets desde HaloITSM para vista previa...';
   try{
-    const data = await callHalo('sync', { pageSize: 50, maxPages: 10, dryRun: true });
-    out.textContent = `Se encontraron ${data.fetched} tickets en HaloITSM. Revisa la vista previa abajo antes de confirmar.`;
-    renderHaloPreview(data.preview, data.fetched);
+    const data = await callHalo('sync', { pageSize: 50, maxPages: 10 });
+    haloPreviewRows = data.preview || [];
+    const catalogNote = data.usedCalltypeCatalog
+      ? 'La clasificación Incidente/Solicitud/Problema/Cambio se resolvió usando el catálogo real de tipos de ticket de tu HaloITSM.'
+      : 'No se pudo leer el catálogo de tipos de ticket de Halo; la clasificación se infirió por nombre — revisa con cuidado las filas marcadas en ámbar.';
+    out.textContent = `Se encontraron ${data.fetched} tickets en HaloITSM. ${catalogNote} Revisa (y corrige si hace falta) la columna "Tipo ITIL" antes de confirmar.`;
+    renderHaloPreview(haloPreviewRows, data.fetched);
   }catch(err){
     out.textContent = '✖ '+err.message;
     toast('Falló la vista previa');
@@ -2253,40 +2259,60 @@ document.getElementById('btnHaloPreview').addEventListener('click', async ()=>{
 function renderHaloPreview(rows, total){
   document.getElementById('haloPreviewTotal').textContent = total;
   const cols = [
-    {k:'external_ref', l:'Folio'}, {k:'ticket_type', l:'Tipo ITIL'}, {k:'ticket_type_label', l:'Tipo de ticket'}, {k:'title', l:'Título'},
+    {k:'external_ref', l:'Folio'}, {k:'title', l:'Título'}, {k:'ticket_type_label', l:'Tipo de ticket (Halo)'},
     {k:'status', l:'Estado'}, {k:'priority', l:'Prioridad'}, {k:'client_name', l:'Organización'},
     {k:'agent_name', l:'Agente'}, {k:'site', l:'Sitio'}, {k:'locality', l:'Localidad'}, {k:'created_at', l:'Creado'},
   ];
   const thead = document.querySelector('#haloPreviewTable thead');
   const tbody = document.querySelector('#haloPreviewTable tbody');
-  thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c.l}</th>`).join('')+'</tr>';
-  tbody.innerHTML = (rows||[]).map(r=>'<tr>'+cols.map(c=>`<td>${escapeHtml(r[c.k]??'')}</td>`).join('')+'</tr>').join('') ||
-    `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--text-3);padding:16px;">No se encontraron tickets</td></tr>`;
+  thead.innerHTML = '<tr><th>Tipo ITIL</th>'+cols.map(c=>`<th>${c.l}</th>`).join('')+'</tr>';
+  tbody.innerHTML = (rows||[]).map((r,i)=>{
+    const uncertain = r.ticket_type_confident === false;
+    const typeSelect = `<select data-row-idx="${i}" class="halo-type-select" style="padding:4px 6px;border:1px solid ${uncertain?'var(--warning)':'var(--border)'};border-radius:6px;${uncertain?'background:var(--warning-bg);':''}">
+      ${['incidente','solicitud','problema','cambio'].map(v=>`<option value="${v}" ${r.ticket_type===v?'selected':''}>${TYPE_LABELS[v]}</option>`).join('')}
+    </select>${uncertain?' <span title="Clasificación no confirmada, revisa" style="color:var(--warning);">⚠</span>':''}`;
+    return '<tr>'+`<td>${typeSelect}</td>`+cols.map(c=>`<td>${escapeHtml(r[c.k]??'')}</td>`).join('')+'</tr>';
+  }).join('') || `<tr><td colspan="${cols.length+1}" style="text-align:center;color:var(--text-3);padding:16px;">No se encontraron tickets</td></tr>`;
+
+  tbody.querySelectorAll('.halo-type-select').forEach(sel=>{
+    sel.addEventListener('change', ()=>{
+      const idx = Number(sel.dataset.rowIdx);
+      haloPreviewRows[idx].ticket_type = sel.value;
+      haloPreviewRows[idx].ticket_type_confident = true; // corregido manualmente
+      sel.style.borderColor = 'var(--border)';
+      sel.style.background = '';
+    });
+  });
+
   document.getElementById('haloPreviewPanel').style.display = 'block';
 }
 
 document.getElementById('btnHaloCancelPreview').addEventListener('click', ()=>{
   document.getElementById('haloPreviewPanel').style.display = 'none';
+  haloPreviewRows = [];
 });
 
 document.getElementById('btnHaloConfirmSync').addEventListener('click', async ()=>{
   const out = document.getElementById('haloResult');
   const btn = document.getElementById('btnHaloConfirmSync');
+  if(!haloPreviewRows.length){ toast('No hay tickets en la vista previa'); return; }
   btn.disabled = true; btn.textContent = 'Importando...';
   out.textContent = 'Importando tickets confirmados...';
   try{
-    const data = await callHalo('sync', { pageSize: 50, maxPages: 10, dryRun: false });
-    out.textContent = `✔ Sincronización completa: ${data.fetched} tickets leídos de HaloITSM, ${data.imported} importados, ${data.skipped_existing} ya existían, ${data.clientsCreated} clientes nuevos creados.`;
-    toast(`Sincronizados ${data.imported} tickets nuevos`);
+    const data = await callHalo('commit', { rows: haloPreviewRows });
+    out.textContent = `✔ Importación completa: ${data.imported} tickets importados (clasificados como incidente/solicitud/problema/cambio según revisaste), ${data.skipped_existing} ya existían, ${data.clientsCreated} clientes nuevos creados.`;
+    toast(`Importados ${data.imported} tickets nuevos`);
     document.getElementById('haloPreviewPanel').style.display = 'none';
+    haloPreviewRows = [];
     await loadAll();
   }catch(err){
     out.textContent = '✖ '+err.message;
-    toast('Falló la sincronización');
+    toast('Falló la importación');
   }finally{
     btn.disabled = false; btn.textContent = 'Confirmar e importar todos';
   }
 });
+
 
 /* =========================================================
    IMPORTAR TICKETS DESDE CSV (HaloITSM u otro sistema)
