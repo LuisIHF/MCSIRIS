@@ -472,6 +472,7 @@ label.req::after{content:' *';color:var(--danger);}
           <div id="bulkActionBar" style="display:none;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:8px 12px;margin-bottom:12px;align-items:center;justify-content:space-between;">
             <span id="bulkSelectedCount" style="font-size:12.5px;font-weight:600;color:var(--primary);"></span>
             <div style="display:flex;gap:8px;">
+              <button class="btn btn-ghost btn-sm" id="btnBulkMerge">Fusionar seleccionados</button>
               <button class="btn btn-primary btn-sm" id="btnBulkClose">Cerrar seleccionados</button>
               <button class="btn btn-ghost btn-sm" id="btnBulkClear">Cancelar selección</button>
             </div>
@@ -868,6 +869,18 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
       </div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" id="cancelResetTickets">Cancelar</button><button class="btn btn-danger" id="confirmResetTickets" disabled>Eliminar todo</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: FUSIONAR TICKETS ============ -->
+<div class="modal-center" id="mergeModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Fusionar tickets</h3><button class="drawer-close" id="closeMergeModal">×</button></div>
+    <div class="modal-body">
+      <p class="hint" style="margin-bottom:14px;">Elige cuál será el <strong>ticket principal</strong>. Los demás se cerrarán automáticamente, su bitácora se copiará al principal, y sus folios quedarán registrados en él para referencia.</p>
+      <div id="mergeTicketOptions"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelMerge">Cancelar</button><button class="btn btn-primary" id="confirmMerge">Fusionar</button></div>
   </div>
 </div>
 
@@ -1514,7 +1527,7 @@ function renderTicketsTable(){
       <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.created_at)}</td>
       <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.reported_by||'—')}</td>
       <td onclick="openTicketDrawer('${t.id}')">${ticketAgeStr(t)}</td>
-      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span>${t.merged_into_id?' <span title="Fusionado en otro ticket" style="font-size:11px;color:var(--text-3);">↪</span>':''}${(t.merged_ticket_numbers&&t.merged_ticket_numbers.length)?` <span class="pill pill-status" title="Tickets fusionados en este">⇄${t.merged_ticket_numbers.length}</span>`:''}</td>
       <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.sla_resolution_due)}</td>
       <td onclick="openTicketDrawer('${t.id}')">${pct==null?'—':pct+'%'}</td>
       <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span></td>
@@ -1571,6 +1584,7 @@ function updateBulkBar(){
   if(count > 0){
     bar.style.display = 'flex';
     document.getElementById('bulkSelectedCount').textContent = `${count} ticket${count>1?'s':''} seleccionado${count>1?'s':''}`;
+    document.getElementById('btnBulkMerge').style.display = count >= 2 ? 'inline-flex' : 'none';
   } else {
     bar.style.display = 'none';
   }
@@ -1587,6 +1601,53 @@ document.getElementById('btnBulkClear').addEventListener('click', ()=>{
   selectedTicketIds.clear();
   renderTicketsTable();
 });
+document.getElementById('btnBulkMerge').addEventListener('click', ()=>{
+  const ids = [...selectedTicketIds];
+  if(ids.length < 2){ toast('Selecciona al menos 2 tickets para fusionar'); return; }
+  const tickets = ids.map(id=>STATE.tickets.find(t=>t.id===id)).filter(Boolean);
+  const types = new Set(tickets.map(t=>t.ticket_type));
+  if(types.size > 1){ toast('Solo se pueden fusionar tickets del mismo tipo (ej. todos Incidentes o todos Solicitudes)'); return; }
+  renderMergeOptions(tickets);
+  document.getElementById('mergeModal').classList.add('active');
+});
+
+function renderMergeOptions(tickets){
+  const wrap = document.getElementById('mergeTicketOptions');
+  wrap.innerHTML = tickets.map((t,i)=>`
+    <label style="display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;">
+      <input type="radio" name="mergePrimary" value="${t.id}" ${i===0?'checked':''} style="margin-top:3px;">
+      <div>
+        <div style="font-weight:600;font-size:13px;"><span class="ticket-id">${t.ticket_number}</span> — ${escapeHtml(t.title)}</div>
+        <div class="hint" style="margin-top:2px;">${t.clients?.name||'Sin cliente'} · ${STATUS_LABELS[t.status]} · Creado ${fmtDateShort(t.created_at)}</div>
+      </div>
+    </label>`).join('');
+}
+
+document.getElementById('closeMergeModal').addEventListener('click', ()=>document.getElementById('mergeModal').classList.remove('active'));
+document.getElementById('cancelMerge').addEventListener('click', ()=>document.getElementById('mergeModal').classList.remove('active'));
+document.getElementById('confirmMerge').addEventListener('click', async ()=>{
+  const selected = document.querySelector('input[name="mergePrimary"]:checked');
+  if(!selected){ toast('Elige el ticket principal'); return; }
+  const primaryId = selected.value;
+  const allIds = [...selectedTicketIds];
+  const secondaryIds = allIds.filter(id=>id!==primaryId);
+  const btn = document.getElementById('confirmMerge');
+  btn.disabled = true; btn.textContent = 'Fusionando...';
+  try{
+    const { error } = await sb.rpc('merge_tickets', { primary_id: primaryId, secondary_ids: secondaryIds, acting_agent_id: STATE.agent.id });
+    if(error) throw error;
+    toast(`${secondaryIds.length} ticket(s) fusionados`);
+    document.getElementById('mergeModal').classList.remove('active');
+    selectedTicketIds.clear();
+    await loadTickets();
+    openTicketDrawer(primaryId);
+  }catch(err){
+    toast('Error: '+err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Fusionar';
+  }
+});
+
 document.getElementById('btnBulkClose').addEventListener('click', ()=>{
   const ids = [...selectedTicketIds];
   if(ids.length===0) return;
@@ -1793,6 +1854,8 @@ function renderTicketDrawerBody(t, comments){
     </div>
 
     ${t.external_ref ? `<div class="hint" style="margin-bottom:10px;">Folio original (${t.external_source||'sistema externo'}): <strong>${escapeHtml(t.external_ref)}</strong></div>` : ''}
+    ${t.merged_into_id ? `<div class="hint" style="background:var(--warning-bg);color:var(--warning);padding:8px 10px;border-radius:8px;margin-bottom:10px;">Este ticket fue fusionado en otro. <a href="#" onclick="event.preventDefault();openTicketDrawer('${t.merged_into_id}')" style="color:var(--warning);font-weight:600;">Ver ticket principal →</a></div>` : ''}
+    ${(t.merged_ticket_numbers && t.merged_ticket_numbers.length) ? `<div class="hint" style="background:var(--success-bg);color:var(--success);padding:8px 10px;border-radius:8px;margin-bottom:10px;">Tickets fusionados en este: <strong>${t.merged_ticket_numbers.map(n=>escapeHtml(n)).join(', ')}</strong></div>` : ''}
     <div class="detail-grid">
       <div class="dg-item"><div class="k">Organización</div><div class="v">${client?.name || '—'}</div></div>
       <div class="dg-item"><div class="k">Categoría</div><div class="v">${t.categories ? escapeHtml(t.categories.name + (t.categories.subcategory?' — '+t.categories.subcategory:'')) : '—'}</div></div>
@@ -2300,7 +2363,7 @@ document.getElementById('btnHaloConfirmSync').addEventListener('click', async ()
   out.textContent = 'Importando tickets confirmados...';
   try{
     const data = await callHalo('commit', { rows: haloPreviewRows });
-    out.textContent = `✔ Importación completa: ${data.imported} tickets importados (clasificados como incidente/solicitud/problema/cambio según revisaste), ${data.skipped_existing} ya existían, ${data.clientsCreated} clientes nuevos creados.`;
+    out.textContent = `✔ Sincronización completa: ${data.imported} tickets nuevos importados, ${data.updated} tickets existentes actualizados (homologados por su folio de Halo), ${data.clientsCreated} clientes nuevos creados.`;
     toast(`Importados ${data.imported} tickets nuevos`);
     document.getElementById('haloPreviewPanel').style.display = 'none';
     haloPreviewRows = [];
