@@ -373,6 +373,7 @@ label.req::after{content:' *';color:var(--danger);}
     <div class="sb-nav">
       <div class="sb-item active" data-view="dashboard"><span class="ic">◆</span>Dashboard</div>
       <div class="sb-item" data-view="tickets"><span class="ic">▤</span>Tickets<span class="badge-count" id="navOpenCount" style="display:none;"></span></div>
+      <div class="sb-item" data-view="closed"><span class="ic">✓</span>Tickets cerrados</div>
       <div class="sb-section-label" id="sbConfigLabel">Configuración</div>
       <div class="sb-item" data-view="clients" data-admin-only="1"><span class="ic">◈</span>Clientes</div>
       <div class="sb-item" data-view="templates"><span class="ic">▥</span>Plantillas</div>
@@ -492,6 +493,40 @@ label.req::after{content:' *';color:var(--danger);}
           <div class="empty-state" id="ticketsEmpty" style="display:none;">
             <div class="big">▤</div><p><strong>No hay tickets que coincidan</strong></p><p>Ajusta los filtros o crea un nuevo ticket.</p>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= TICKETS CERRADOS ================= -->
+    <div class="view" id="view-closed">
+      <div class="topbar">
+        <div><h2>Tickets cerrados</h2><div class="sub">Historial de tickets cerrados y cancelados — separado para no saturar la vista principal</div></div>
+      </div>
+      <div class="panel">
+        <div class="filters">
+          <div class="search-input"><input type="text" id="fClosedSearch" placeholder="Buscar por folio, título, cliente, usuario, sitio..."></div>
+          <select id="fClosedType"><option value="">Todos los tipos</option><option value="incidente">Incidente</option><option value="solicitud">Solicitud</option><option value="problema">Problema</option><option value="cambio">Cambio</option></select>
+          <select id="fClosedClient"><option value="">Todos los clientes</option></select>
+        </div>
+        <div id="closedBulkActionBar" style="display:none;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:8px 12px;margin-bottom:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <span id="closedBulkSelectedCount" style="font-size:12.5px;font-weight:600;color:var(--primary);"></span>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-ghost btn-sm" id="btnClosedBulkMerge">Fusionar seleccionados</button>
+            <button class="btn btn-danger btn-sm" id="btnClosedBulkDelete" style="display:none;">Eliminar seleccionados</button>
+            <button class="btn btn-ghost btn-sm" id="btnClosedBulkClear">Cancelar selección</button>
+          </div>
+        </div>
+        <div style="overflow-x:auto;">
+        <table id="closedTicketsTable"><thead><tr>
+          <th style="width:28px;"><input type="checkbox" id="fClosedSelectAll"></th>
+          <th>ID</th><th>SLA restante</th><th>Resumen</th><th>Agente</th><th>Categoría</th><th>Organización</th>
+          <th>Línea</th><th>Prioridad</th><th>Impacto</th><th>Urgencia</th><th>Fecha del informe</th><th>Usuario</th>
+          <th>Antigüedad</th><th>Estado</th><th>Objetivo de resolución</th><th>% SLA</th><th>Tipo ITIL</th><th>Tipo de Ticket</th>
+          <th>Arquitectura</th><th>Sitio</th><th>Localidad</th><th>Fecha de cierre</th>
+        </tr></thead><tbody></tbody></table>
+        </div>
+        <div class="empty-state" id="closedTicketsEmpty" style="display:none;">
+          <div class="big">✓</div><p><strong>No hay tickets cerrados que coincidan</strong></p><p>Ajusta los filtros, o aún no se ha cerrado ningún ticket.</p>
         </div>
       </div>
     </div>
@@ -1136,6 +1171,7 @@ function switchView(view){
   document.getElementById('view-'+view).classList.add('active');
   if(view==='reports') renderReports();
   if(view==='import') checkHaloStatus();
+  if(view==='closed') renderClosedTicketsTable();
 }
 
 /* =========================================================
@@ -1159,6 +1195,7 @@ async function loadAll(){
   populateSelect('ntClient', STATE.clients, 'id','name','Sin asignar');
   populateSelect('ntAssign', activeAgents, 'id','full_name','Sin asignar');
   populateSelect('fClient', STATE.clients, 'id','name','Todos los clientes');
+  populateSelect('fClosedClient', STATE.clients, 'id','name','Todos los clientes');
   populateSelect('clLevel', null,null,null,null); // noop guard
   populateSelect('slaClient', STATE.clients, 'id','name','Global (todos los clientes)');
 
@@ -1183,12 +1220,14 @@ function populateSelect(id, items, valKey, labelKey, placeholder){
 }
 
 async function loadTickets(){
-  const {data, error} = await sb.from('tickets').select('*, clients(name), agents:assigned_agent_id(full_name), categories(name, subcategory)').order('created_at', {ascending:false}).limit(500);
+  const {data, error} = await sb.from('tickets').select('*, clients(name), agents:assigned_agent_id(full_name), categories(name, subcategory)').order('created_at', {ascending:false}).limit(5000);
   if(error){ console.error(error); return; }
   STATE.tickets = data || [];
   populateDistinctFilters();
+  refreshStatusFilterOptions();
   renderGroupPanel();
   renderTicketsTable();
+  renderClosedTicketsTable();
   renderDashboard();
 }
 
@@ -1373,13 +1412,18 @@ document.querySelectorAll('#ticketsTypeTabs .tab-btn').forEach(btn=>{
     document.querySelectorAll('#ticketsTypeTabs .tab-btn').forEach(b=>b.classList.toggle('active', b===btn));
     STATE.ticketsTypeFilter = btn.dataset.ttype;
     STATE.groupFilter = null;
-    const statusSel = document.getElementById('fStatus');
-    const statuses = STATE.ticketsTypeFilter ? STATUS_BY_TYPE[STATE.ticketsTypeFilter] : Object.keys(STATUS_LABELS);
-    statusSel.innerHTML = '<option value="">Todos los estados</option>' + [...new Set(statuses)].map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join('');
+    refreshStatusFilterOptions();
     renderGroupPanel();
     renderTicketsTable();
   });
 });
+
+function refreshStatusFilterOptions(){
+  const statusSel = document.getElementById('fStatus');
+  const statuses = STATE.ticketsTypeFilter ? STATUS_BY_TYPE[STATE.ticketsTypeFilter] : Object.keys(STATUS_LABELS);
+  const activeStatuses = [...new Set(statuses)].filter(s=>!CLOSED_STATUSES.includes(s));
+  statusSel.innerHTML = '<option value="">Todos los estados</option>' + activeStatuses.map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join('');
+}
 
 ['fSearch','fStatus','fPriority','fClient'].forEach(id=>{
   document.getElementById(id).addEventListener('input', renderTicketsTable);
@@ -1498,6 +1542,39 @@ function renderGroupFilterChip(){
   });
 }
 
+function buildTicketRowHtml(t){
+  const catLabel = t.categories ? (t.categories.name + (t.categories.subcategory ? ' — '+t.categories.subcategory : '')) : '—';
+  const pct = slaPercentElapsed(t);
+  return `
+    <tr>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="ticket-select-cb" data-id="${t.id}" ${selectedTicketIds.has(t.id)?'checked':''}></td>
+      <td class="ticket-id" onclick="openTicketDrawer('${t.id}')">${t.ticket_number}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${slaChipHtml(t)}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.title)}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${t.agents?.full_name || '—'}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(catLabel)}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${t.clients?.name || '—'}</td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status">${LINE_SHORT[t.support_line||'l1']}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')" style="text-transform:capitalize;">${t.impact||'—'}</td>
+      <td onclick="openTicketDrawer('${t.id}')" style="text-transform:capitalize;">${t.urgency||'—'}</td>
+      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.created_at)}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.reported_by||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${ticketAgeStr(t)}</td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span>${t.merged_into_id?' <span title="Fusionado en otro ticket" style="font-size:11px;color:var(--text-3);">↪</span>':''}${(t.merged_ticket_numbers&&t.merged_ticket_numbers.length)?` <span class="pill pill-status" title="Tickets fusionados en este">⇄${t.merged_ticket_numbers.length}</span>`:''}</td>
+      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.sla_resolution_due)}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${pct==null?'—':pct+'%'}</td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.ticket_type_label||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.architecture||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.site||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.locality||'—')}</td>
+      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${t.closed_at ? fmtDateShort(t.closed_at) : '—'}</td>
+    </tr>`;
+}
+
+const CLOSED_STATUSES = ['cerrado','cancelado'];
+
 function renderTicketsTable(){
   const q = document.getElementById('fSearch').value.toLowerCase();
   const type = STATE.ticketsTypeFilter;
@@ -1514,6 +1591,7 @@ function renderTicketsTable(){
   const gf = STATE.groupFilter;
 
   let filtered = STATE.tickets.filter(t=>{
+    if(CLOSED_STATUSES.includes(t.status)) return false; // los cerrados viven en su propio apartado
     if(type && t.ticket_type!==type) return false;
     if(status && t.status!==status) return false;
     if(priority && t.priority!==priority) return false;
@@ -1547,36 +1625,7 @@ function renderTicketsTable(){
 
   const tbody = document.querySelector('#ticketsTable tbody');
   document.getElementById('ticketsEmpty').style.display = filtered.length===0 ? 'block':'none';
-  tbody.innerHTML = filtered.map(t=>{
-    const catLabel = t.categories ? (t.categories.name + (t.categories.subcategory ? ' — '+t.categories.subcategory : '')) : '—';
-    const pct = slaPercentElapsed(t);
-    return `
-    <tr>
-      <td onclick="event.stopPropagation()"><input type="checkbox" class="ticket-select-cb" data-id="${t.id}" ${selectedTicketIds.has(t.id)?'checked':''} ${['cerrado','cancelado'].includes(t.status)?'disabled title="Ya está cerrado"':''}></td>
-      <td class="ticket-id" onclick="openTicketDrawer('${t.id}')">${t.ticket_number}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${slaChipHtml(t)}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.title)}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${t.agents?.full_name || '—'}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(catLabel)}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${t.clients?.name || '—'}</td>
-      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status">${LINE_SHORT[t.support_line||'l1']}</span></td>
-      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span></td>
-      <td onclick="openTicketDrawer('${t.id}')" style="text-transform:capitalize;">${t.impact||'—'}</td>
-      <td onclick="openTicketDrawer('${t.id}')" style="text-transform:capitalize;">${t.urgency||'—'}</td>
-      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.created_at)}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.reported_by||'—')}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${ticketAgeStr(t)}</td>
-      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status st-${t.status}">${STATUS_LABELS[t.status]||t.status}</span>${t.merged_into_id?' <span title="Fusionado en otro ticket" style="font-size:11px;color:var(--text-3);">↪</span>':''}${(t.merged_ticket_numbers&&t.merged_ticket_numbers.length)?` <span class="pill pill-status" title="Tickets fusionados en este">⇄${t.merged_ticket_numbers.length}</span>`:''}</td>
-      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${fmtDateShort(t.sla_resolution_due)}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${pct==null?'—':pct+'%'}</td>
-      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-type-${t.ticket_type}">${TYPE_LABELS[t.ticket_type]}</span></td>
-      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.ticket_type_label||'—')}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.architecture||'—')}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.site||'—')}</td>
-      <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(t.locality||'—')}</td>
-      <td onclick="openTicketDrawer('${t.id}')" style="color:var(--text-3);">${t.closed_at ? fmtDateShort(t.closed_at) : '—'}</td>
-    </tr>`;
-  }).join('');
+  tbody.innerHTML = filtered.map(buildTicketRowHtml).join('');
 
   tbody.querySelectorAll('.ticket-select-cb').forEach(cb=>{
     cb.addEventListener('change', ()=>{
@@ -1588,7 +1637,77 @@ function renderTicketsTable(){
   updateBulkBar();
 }
 
+/* =========================================================
+   TICKETS CERRADOS (apartado separado)
+========================================================= */
+function renderClosedTicketsTable(){
+  const q = document.getElementById('fClosedSearch').value.toLowerCase();
+  const type = document.getElementById('fClosedType').value;
+  const client = document.getElementById('fClosedClient').value;
+
+  let filtered = STATE.tickets.filter(t=>{
+    if(!CLOSED_STATUSES.includes(t.status)) return false;
+    if(type && t.ticket_type!==type) return false;
+    if(client && t.client_id!==client) return false;
+    if(q && !(t.ticket_number.toLowerCase().includes(q) || t.title.toLowerCase().includes(q) ||
+      (t.clients?.name||'').toLowerCase().includes(q) || (t.reported_by||'').toLowerCase().includes(q) ||
+      (t.site||'').toLowerCase().includes(q) || (t.locality||'').toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a,b)=> new Date(b.closed_at||b.updated_at||b.created_at) - new Date(a.closed_at||a.updated_at||a.created_at));
+
+  const visibleIds = new Set(filtered.map(t=>t.id));
+  [...selectedTicketIds].forEach(id=>{ if(!visibleIds.has(id)) selectedTicketIds.delete(id); });
+
+  const tbody = document.querySelector('#closedTicketsTable tbody');
+  document.getElementById('closedTicketsEmpty').style.display = filtered.length===0 ? 'block':'none';
+  tbody.innerHTML = filtered.map(buildTicketRowHtml).join('');
+
+  tbody.querySelectorAll('.ticket-select-cb').forEach(cb=>{
+    cb.addEventListener('change', ()=>{
+      if(cb.checked) selectedTicketIds.add(cb.dataset.id); else selectedTicketIds.delete(cb.dataset.id);
+      updateClosedBulkBar();
+    });
+  });
+  document.getElementById('fClosedSelectAll').checked = false;
+  updateClosedBulkBar();
+}
+
+function updateClosedBulkBar(){
+  const bar = document.getElementById('closedBulkActionBar');
+  const count = [...selectedTicketIds].filter(id=>{
+    const t = STATE.tickets.find(x=>x.id===id);
+    return t && CLOSED_STATUSES.includes(t.status);
+  }).length;
+  if(count > 0){
+    bar.style.display = 'flex';
+    document.getElementById('closedBulkSelectedCount').textContent = `${count} ticket${count>1?'s':''} seleccionado${count>1?'s':''}`;
+    document.getElementById('btnClosedBulkMerge').style.display = count >= 2 ? 'inline-flex' : 'none';
+    document.getElementById('btnClosedBulkDelete').style.display = STATE.agent?.role === 'admin' ? 'inline-flex' : 'none';
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+['fClosedSearch','fClosedType','fClosedClient'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', renderClosedTicketsTable);
+  document.getElementById(id).addEventListener('change', renderClosedTicketsTable);
+});
+document.getElementById('fClosedSelectAll').addEventListener('change', (e)=>{
+  document.querySelectorAll('#closedTicketsTable .ticket-select-cb').forEach(cb=>{
+    cb.checked = e.target.checked;
+    if(e.target.checked) selectedTicketIds.add(cb.dataset.id); else selectedTicketIds.delete(cb.dataset.id);
+  });
+  updateClosedBulkBar();
+});
+document.getElementById('btnClosedBulkClear').addEventListener('click', ()=>{
+  selectedTicketIds.clear();
+  renderClosedTicketsTable();
+});
+document.getElementById('btnClosedBulkMerge').addEventListener('click', ()=> openMergeModalForSelection());
+document.getElementById('btnClosedBulkDelete').addEventListener('click', ()=> openBulkDeleteModalForSelection());
+
 function populateDistinctFilters(){
+
   const distinct = (key) => [...new Set(STATE.tickets.map(t=>t[key]).filter(Boolean))].sort();
   const fillOptions = (id, values, placeholder) => {
     const el = document.getElementById(id);
@@ -1695,7 +1814,7 @@ document.getElementById('confirmBulkAssign').addEventListener('click', async ()=
 });
 
 /* ---- Eliminar masivo (solo admin) ---- */
-document.getElementById('btnBulkDelete').addEventListener('click', ()=>{
+function openBulkDeleteModalForSelection(){
   const ids = [...selectedTicketIds];
   if(!ids.length) return;
   const tickets = ids.map(id=>STATE.tickets.find(t=>t.id===id)).filter(Boolean);
@@ -1704,7 +1823,8 @@ document.getElementById('btnBulkDelete').addEventListener('click', ()=>{
       <span class="ticket-id">${t.ticket_number}</span> — ${escapeHtml(t.title)}
     </div>`).join('');
   document.getElementById('bulkDeleteModal').classList.add('active');
-});
+}
+document.getElementById('btnBulkDelete').addEventListener('click', openBulkDeleteModalForSelection);
 document.getElementById('closeBulkDeleteModal').addEventListener('click', ()=>document.getElementById('bulkDeleteModal').classList.remove('active'));
 document.getElementById('cancelBulkDelete').addEventListener('click', ()=>document.getElementById('bulkDeleteModal').classList.remove('active'));
 document.getElementById('confirmBulkDelete').addEventListener('click', async ()=>{
@@ -1736,7 +1856,7 @@ document.getElementById('btnBulkClear').addEventListener('click', ()=>{
   selectedTicketIds.clear();
   renderTicketsTable();
 });
-document.getElementById('btnBulkMerge').addEventListener('click', ()=>{
+function openMergeModalForSelection(){
   const ids = [...selectedTicketIds];
   if(ids.length < 2){ toast('Selecciona al menos 2 tickets para fusionar'); return; }
   const tickets = ids.map(id=>STATE.tickets.find(t=>t.id===id)).filter(Boolean);
@@ -1744,7 +1864,8 @@ document.getElementById('btnBulkMerge').addEventListener('click', ()=>{
   if(types.size > 1){ toast('Solo se pueden fusionar tickets del mismo tipo (ej. todos Incidentes o todos Solicitudes)'); return; }
   renderMergeOptions(tickets);
   document.getElementById('mergeModal').classList.add('active');
-});
+}
+document.getElementById('btnBulkMerge').addEventListener('click', openMergeModalForSelection);
 
 function renderMergeOptions(tickets){
   const wrap = document.getElementById('mergeTicketOptions');
