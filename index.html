@@ -469,11 +469,14 @@ label.req::after{content:' *';color:var(--danger);}
             <select id="fTicketTypeLabel"><option value="">Todo tipo de ticket</option></select>
           </div>
           <div id="groupFilterChip" style="display:none;margin-bottom:12px;"></div>
-          <div id="bulkActionBar" style="display:none;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:8px 12px;margin-bottom:12px;align-items:center;justify-content:space-between;">
+          <div id="bulkActionBar" style="display:none;background:var(--primary-light);border:1px solid var(--primary);border-radius:8px;padding:8px 12px;margin-bottom:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
             <span id="bulkSelectedCount" style="font-size:12.5px;font-weight:600;color:var(--primary);"></span>
-            <div style="display:flex;gap:8px;">
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-ghost btn-sm" id="btnBulkStatus">Cambiar estado</button>
+              <button class="btn btn-ghost btn-sm" id="btnBulkAssign">Asignar</button>
               <button class="btn btn-ghost btn-sm" id="btnBulkMerge">Fusionar seleccionados</button>
               <button class="btn btn-primary btn-sm" id="btnBulkClose">Cerrar seleccionados</button>
+              <button class="btn btn-danger btn-sm" id="btnBulkDelete" style="display:none;">Eliminar seleccionados</button>
               <button class="btn btn-ghost btn-sm" id="btnBulkClear">Cancelar selección</button>
             </div>
           </div>
@@ -881,6 +884,42 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
       <div id="mergeTicketOptions"></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" id="cancelMerge">Cancelar</button><button class="btn btn-primary" id="confirmMerge">Fusionar</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: CAMBIAR ESTADO MASIVO ============ -->
+<div class="modal-center" id="bulkStatusModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Cambiar estado</h3><button class="drawer-close" id="closeBulkStatusModal">×</button></div>
+    <div class="modal-body">
+      <p class="hint" style="margin-bottom:12px;" id="bulkStatusCount"></p>
+      <div class="field"><label>Nuevo estado</label><select id="bulkStatusSelect"></select></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelBulkStatus">Cancelar</button><button class="btn btn-primary" id="confirmBulkStatus">Aplicar</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: ASIGNAR MASIVO ============ -->
+<div class="modal-center" id="bulkAssignModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3>Asignar tickets</h3><button class="drawer-close" id="closeBulkAssignModal">×</button></div>
+    <div class="modal-body">
+      <p class="hint" style="margin-bottom:12px;" id="bulkAssignCount"></p>
+      <div class="field"><label>Agente</label><select id="bulkAssignSelect"><option value="">Sin asignar</option></select></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelBulkAssign">Cancelar</button><button class="btn btn-primary" id="confirmBulkAssign">Aplicar</button></div>
+  </div>
+</div>
+
+<!-- ============ MODAL: ELIMINAR SELECCIONADOS ============ -->
+<div class="modal-center" id="bulkDeleteModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 style="color:var(--danger);">Eliminar tickets seleccionados</h3><button class="drawer-close" id="closeBulkDeleteModal">×</button></div>
+    <div class="modal-body">
+      <p class="hint" style="background:var(--danger-bg);color:var(--danger);padding:10px 12px;border-radius:8px;margin-bottom:12px;">Esta acción es permanente y no se puede deshacer. Se eliminarán también sus comentarios y bitácora.</p>
+      <div id="bulkDeleteList" style="max-height:220px;overflow-y:auto;font-size:12.5px;color:var(--text-2);"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelBulkDelete">Cancelar</button><button class="btn btn-danger" id="confirmBulkDelete">Eliminar definitivamente</button></div>
   </div>
 </div>
 
@@ -1585,10 +1624,106 @@ function updateBulkBar(){
     bar.style.display = 'flex';
     document.getElementById('bulkSelectedCount').textContent = `${count} ticket${count>1?'s':''} seleccionado${count>1?'s':''}`;
     document.getElementById('btnBulkMerge').style.display = count >= 2 ? 'inline-flex' : 'none';
+    document.getElementById('btnBulkDelete').style.display = STATE.agent?.role === 'admin' ? 'inline-flex' : 'none';
   } else {
     bar.style.display = 'none';
   }
 }
+
+/* ---- Cambiar estado masivo ---- */
+document.getElementById('btnBulkStatus').addEventListener('click', ()=>{
+  const ids = [...selectedTicketIds];
+  if(!ids.length) return;
+  const tickets = ids.map(id=>STATE.tickets.find(t=>t.id===id)).filter(Boolean);
+  const types = [...new Set(tickets.map(t=>t.ticket_type))];
+  // intersección de estados válidos entre todos los tipos seleccionados
+  const validStatuses = types.reduce((acc, type) => acc.filter(s => STATUS_BY_TYPE[type].includes(s)), STATUS_BY_TYPE[types[0]]);
+  if(!validStatuses.length){ toast('Los tickets seleccionados no comparten estados válidos en común'); return; }
+  document.getElementById('bulkStatusCount').textContent = `Aplicar a ${ids.length} ticket(s) seleccionado(s).`;
+  document.getElementById('bulkStatusSelect').innerHTML = validStatuses.map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join('');
+  document.getElementById('bulkStatusModal').classList.add('active');
+});
+document.getElementById('closeBulkStatusModal').addEventListener('click', ()=>document.getElementById('bulkStatusModal').classList.remove('active'));
+document.getElementById('cancelBulkStatus').addEventListener('click', ()=>document.getElementById('bulkStatusModal').classList.remove('active'));
+document.getElementById('confirmBulkStatus').addEventListener('click', async ()=>{
+  const ids = [...selectedTicketIds];
+  const newStatus = document.getElementById('bulkStatusSelect').value;
+  const btn = document.getElementById('confirmBulkStatus');
+  btn.disabled = true; btn.textContent = 'Aplicando...';
+  try{
+    const { error } = await sb.rpc('bulk_update_status', { ticket_ids: ids, new_status: newStatus });
+    if(error) throw error;
+    toast(`Estado actualizado en ${ids.length} ticket(s)`);
+    document.getElementById('bulkStatusModal').classList.remove('active');
+    selectedTicketIds.clear();
+    await loadTickets();
+  }catch(err){
+    toast('Error: '+err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Aplicar';
+  }
+});
+
+/* ---- Asignar masivo ---- */
+document.getElementById('btnBulkAssign').addEventListener('click', ()=>{
+  const ids = [...selectedTicketIds];
+  if(!ids.length) return;
+  document.getElementById('bulkAssignCount').textContent = `Asignar ${ids.length} ticket(s) seleccionado(s) a:`;
+  const activeAgents = STATE.agents.filter(a=>a.active!==false);
+  document.getElementById('bulkAssignSelect').innerHTML = '<option value="">Sin asignar</option>' + activeAgents.map(a=>`<option value="${a.id}">${escapeHtml(a.full_name)}</option>`).join('');
+  document.getElementById('bulkAssignModal').classList.add('active');
+});
+document.getElementById('closeBulkAssignModal').addEventListener('click', ()=>document.getElementById('bulkAssignModal').classList.remove('active'));
+document.getElementById('cancelBulkAssign').addEventListener('click', ()=>document.getElementById('bulkAssignModal').classList.remove('active'));
+document.getElementById('confirmBulkAssign').addEventListener('click', async ()=>{
+  const ids = [...selectedTicketIds];
+  const agentId = document.getElementById('bulkAssignSelect').value || null;
+  const btn = document.getElementById('confirmBulkAssign');
+  btn.disabled = true; btn.textContent = 'Asignando...';
+  try{
+    const { error } = await sb.rpc('bulk_assign_agent', { ticket_ids: ids, new_agent_id: agentId });
+    if(error) throw error;
+    toast(`Asignación actualizada en ${ids.length} ticket(s)`);
+    document.getElementById('bulkAssignModal').classList.remove('active');
+    selectedTicketIds.clear();
+    await loadTickets();
+  }catch(err){
+    toast('Error: '+err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Aplicar';
+  }
+});
+
+/* ---- Eliminar masivo (solo admin) ---- */
+document.getElementById('btnBulkDelete').addEventListener('click', ()=>{
+  const ids = [...selectedTicketIds];
+  if(!ids.length) return;
+  const tickets = ids.map(id=>STATE.tickets.find(t=>t.id===id)).filter(Boolean);
+  document.getElementById('bulkDeleteList').innerHTML = tickets.map(t=>
+    `<div style="padding:4px 0;border-bottom:1px solid var(--border);">
+      <span class="ticket-id">${t.ticket_number}</span> — ${escapeHtml(t.title)}
+    </div>`).join('');
+  document.getElementById('bulkDeleteModal').classList.add('active');
+});
+document.getElementById('closeBulkDeleteModal').addEventListener('click', ()=>document.getElementById('bulkDeleteModal').classList.remove('active'));
+document.getElementById('cancelBulkDelete').addEventListener('click', ()=>document.getElementById('bulkDeleteModal').classList.remove('active'));
+document.getElementById('confirmBulkDelete').addEventListener('click', async ()=>{
+  const ids = [...selectedTicketIds];
+  const btn = document.getElementById('confirmBulkDelete');
+  btn.disabled = true; btn.textContent = 'Eliminando...';
+  try{
+    const { data, error } = await sb.rpc('bulk_delete_tickets', { ticket_ids: ids });
+    if(error) throw error;
+    toast(`${data} ticket(s) eliminados definitivamente`);
+    document.getElementById('bulkDeleteModal').classList.remove('active');
+    selectedTicketIds.clear();
+    await loadTickets();
+  }catch(err){
+    toast('Error: '+err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'Eliminar definitivamente';
+  }
+});
 
 document.getElementById('fSelectAll').addEventListener('change', (e)=>{
   document.querySelectorAll('.ticket-select-cb:not(:disabled)').forEach(cb=>{
