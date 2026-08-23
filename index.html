@@ -9,6 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 :root{
   --bg:#F4F6F9;
@@ -633,9 +634,9 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
       </div>
 
       <div class="panel">
-        <div class="panel-flex"><h3>Carga manual por CSV</h3></div>
-        <p class="hint" style="margin-bottom:10px;">Alternativa si prefieres exportar un CSV desde HaloITSM (u otro sistema) en vez de sincronizar por API.</p>
-        <input type="file" id="importFile" accept=".csv">
+        <div class="panel-flex"><h3>Carga manual por CSV o Excel</h3></div>
+        <p class="hint" style="margin-bottom:10px;">Exporta el listado de tickets desde HaloITSM (columnas: ID, Resumen, Agente, Categoría, Organización, Prioridad, Impacto, Urgencia, Estado, Tipo de ticket ITIL, Sitio, Localidad, etc.) en CSV o Excel y súbelo aquí. La columna "Marcado" se ignora automáticamente.</p>
+        <input type="file" id="importFile" accept=".csv,.xlsx,.xls">
       </div>
 
       <div class="panel" id="importMapPanel" style="display:none;">
@@ -2639,21 +2640,23 @@ document.getElementById('btnHaloConfirmSync').addEventListener('click', async ()
 const IMPORT_FIELDS = [
   {key:'', label:'— No importar —'},
   {key:'external_ref', label:'Folio / ID original'},
-  {key:'ticket_type', label:'Tipo (incidente/solicitud/problema/cambio)'},
+  {key:'ticket_type', label:'Tipo ITIL (incidente/solicitud/problema/cambio)'},
   {key:'ticket_type_label', label:'Tipo de ticket (etiqueta original)'},
-  {key:'title', label:'Título / Asunto'},
+  {key:'title', label:'Título / Resumen'},
   {key:'description', label:'Descripción'},
   {key:'client_name', label:'Cliente / Organización'},
+  {key:'category_name', label:'Categoría'},
   {key:'status', label:'Estado'},
-  {key:'priority', label:'Prioridad (P1-P4)'},
-  {key:'impact', label:'Impacto (alto/medio/bajo)'},
-  {key:'urgency', label:'Urgencia (alto/medio/bajo)'},
+  {key:'priority', label:'Prioridad (Halo, ej. S3/S4/Critical) — referencia'},
+  {key:'impact', label:'Impacto'},
+  {key:'urgency', label:'Urgencia'},
   {key:'agent_name', label:'Agente asignado (nombre o correo)'},
   {key:'reported_by', label:'Usuario / Reportado por'},
   {key:'architecture', label:'Arquitectura'},
   {key:'site', label:'Sitio'},
   {key:'locality', label:'Localidad / Ciudad'},
   {key:'created_at', label:'Fecha del informe (creación)'},
+  {key:'sla_resolution_due', label:'Objetivo de resolución (SLA)'},
   {key:'resolved_at', label:'Fecha de resolución'},
   {key:'closed_at', label:'Fecha de cierre'},
 ];
@@ -2662,22 +2665,60 @@ let importState = { rows: [], headers: [], mapping: {} };
 document.getElementById('importFile').addEventListener('change', (e)=>{
   const file = e.target.files[0];
   if(!file) return;
-  Papa.parse(file, {
-    header: true, skipEmptyLines: true,
-    complete: (res)=>{
-      importState.rows = res.data;
-      importState.headers = res.meta.fields || [];
-      if(importState.rows.length === 0){ toast('El archivo no tiene filas de datos'); return; }
-      renderImportMapping();
-      document.getElementById('importMapPanel').style.display = 'block';
-      document.getElementById('importPreviewPanel').style.display = 'none';
-    },
-    error: (err)=> toast('Error leyendo CSV: '+err.message)
-  });
+  const isExcel = /\.xlsx?$/i.test(file.name);
+
+  function onParsed(rows, headers){
+    // quitar la columna "Marcado" si viene incluida — no se necesita
+    const cleanHeaders = headers.filter(h => h.trim().toLowerCase() !== 'marcado');
+    importState.rows = rows;
+    importState.headers = cleanHeaders;
+    if(importState.rows.length === 0){ toast('El archivo no tiene filas de datos'); return; }
+    renderImportMapping();
+    document.getElementById('importMapPanel').style.display = 'block';
+    document.getElementById('importPreviewPanel').style.display = 'none';
+  }
+
+  if(isExcel){
+    const reader = new FileReader();
+    reader.onload = (evt)=>{
+      try{
+        const wb = XLSX.read(evt.target.result, {type:'array', cellDates:true});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+        const headers = rows.length ? Object.keys(rows[0]) : [];
+        // normalizar fechas a ISO string para el parser de fechas existente
+        const normRows = rows.map(r=>{
+          const out = {...r};
+          for(const k in out){
+            if(out[k] instanceof Date) out[k] = out[k].toISOString();
+          }
+          return out;
+        });
+        onParsed(normRows, headers);
+      }catch(err){
+        toast('Error leyendo Excel: '+err.message);
+      }
+    };
+    reader.onerror = ()=> toast('No se pudo leer el archivo Excel');
+    reader.readAsArrayBuffer(file);
+  } else {
+    Papa.parse(file, {
+      header: true, skipEmptyLines: true,
+      complete: (res)=> onParsed(res.data, res.meta.fields || []),
+      error: (err)=> toast('Error leyendo CSV: '+err.message)
+    });
+  }
 });
 
 function guessField(header){
-  const h = header.toLowerCase();
+  const h = header.trim().toLowerCase();
+  if(/marcado|^flag/.test(h)) return '';
+  if(/objetivo.{0,3}de.{0,3}resoluci|resolution.{0,3}target|resolve.?by/.test(h)) return 'sla_resolution_due';
+  if(/categor/.test(h)) return 'category_name';
+  if(/organizaci/.test(h)) return 'client_name';
+  if(/resumen/.test(h)) return 'title';
+  if(/\bitil\b/.test(h)) return 'ticket_type';
+  if(/tipo.{0,3}de.{0,3}ticket/.test(h)) return 'ticket_type_label';
   if(/folio|^id$|ticket.?number|reference|referencia/.test(h)) return 'external_ref';
   if(/^tipo|type/.test(h)) return 'ticket_type';
   if(/asunto|title|subject|t[ií]tulo/.test(h)) return 'title';
@@ -2692,7 +2733,7 @@ function guessField(header){
   if(/arquitectura|architecture/.test(h)) return 'architecture';
   if(/sitio|^site/.test(h)) return 'site';
   if(/localidad|ciudad|city|locality|town/.test(h)) return 'locality';
-  if(/tipo.?de.?ticket|ticket.?type.?label/.test(h)) return 'ticket_type_label';
+  if(/ticket.?type.?label/.test(h)) return 'ticket_type_label';
   if(/created|creaci[oó]n|fecha.*(alta|apertura|informe)/.test(h)) return 'created_at';
   if(/resolved|resoluci[oó]n/.test(h)) return 'resolved_at';
   if(/closed|cierre/.test(h)) return 'closed_at';
@@ -2747,11 +2788,13 @@ function normStatus(v, fallback){
   const s = v.toLowerCase();
   if(/cerra|closed/.test(s)) return 'cerrado';
   if(/resuel|resolved/.test(s)) return 'resuelto';
+  if(/re-?abiert|reopen/.test(s)) return 'en_progreso';
+  if(/con proveedor|waiting.*(vendor|supplier)/.test(s)) return 'en_espera_proveedor';
+  if(/con usuario|pending customer|waiting customer|espera cliente/.test(s)) return 'en_espera_cliente';
+  if(/en pausa|on hold|\bpause/.test(s)) return 'en_espera_cliente';
   if(/progres|progress|en curso/.test(s)) return 'en_progreso';
   if(/asigna|assigned/.test(s)) return 'asignado';
   if(/cancel/.test(s)) return 'cancelado';
-  if(/espera cliente|pending customer|waiting customer/.test(s)) return 'en_espera_cliente';
-  if(/espera proveedor|waiting.*(vendor|supplier)/.test(s)) return 'en_espera_proveedor';
   if(/nuevo|new|open|abierto/.test(s)) return 'nuevo';
   return fallback;
 }
@@ -2777,10 +2820,19 @@ function normPriority(v){
 function normLevel(v){
   if(!v) return null;
   const s = v.toLowerCase();
-  if(/alto|high/.test(s)) return 'alto';
-  if(/medio|medium/.test(s)) return 'medio';
-  if(/bajo|low/.test(s)) return 'bajo';
+  if(/alt[oa]|high/.test(s)) return 'alto';
+  if(/medi[oa]|medium/.test(s)) return 'medio';
+  if(/baj[oa]|low/.test(s)) return 'bajo';
   return null;
+}
+// Frases de impacto propias de HaloITSM (no son simplemente alto/medio/bajo)
+function normImpactPhrase(v){
+  if(!v) return null;
+  const s = v.toLowerCase();
+  if(/toda la organizaci/.test(s)) return 'alto';
+  if(/m[uú]ltiples usuarios/.test(s)) return 'medio';
+  if(/un usuario/.test(s)) return 'bajo';
+  return normLevel(v);
 }
 
 function buildImportPayload(row){
@@ -2789,9 +2841,12 @@ function buildImportPayload(row){
   const defaultStatus = document.getElementById('importDefaultStatus').value;
   const defaultPriority = document.getElementById('importDefaultPriority').value;
 
-  const impact = normLevel(m.impact) || 'medio';
+  const impact = normImpactPhrase(m.impact) || 'medio';
   const urgency = normLevel(m.urgency) || 'medio';
-  const priority = normPriority(m.priority) || (m.impact||m.urgency ? calcPriority(impact,urgency) : defaultPriority);
+  // La prioridad final la calcula el propio sistema (impacto × urgencia) para
+  // ser consistente con el resto de tickets; el valor de Halo (S3, S4, etc.)
+  // solo se usa como respaldo si no viene impacto/urgencia.
+  const priority = (m.impact||m.urgency) ? calcPriority(impact,urgency) : (normPriority(m.priority) || defaultPriority);
 
   return {
     external_ref: m.external_ref || null,
@@ -2799,8 +2854,9 @@ function buildImportPayload(row){
     ticket_type: normType(m.ticket_type, defaultType),
     ticket_type_label: m.ticket_type_label || null,
     title: m.title || '(Sin título)',
-    description: m.description || null,
+    description: m.description || m.title || null,
     client_name: m.client_name || null,
+    category_name: m.category_name || null,
     status: normStatus(m.status, defaultStatus),
     priority, impact, urgency,
     agent_name: m.agent_name || null,
@@ -2809,6 +2865,7 @@ function buildImportPayload(row){
     site: m.site || null,
     locality: m.locality || null,
     created_at: parseImportDate(m.created_at),
+    sla_resolution_due: parseImportDate(m.sla_resolution_due),
     resolved_at: parseImportDate(m.resolved_at),
     closed_at: parseImportDate(m.closed_at),
   };
@@ -2816,7 +2873,7 @@ function buildImportPayload(row){
 
 function renderImportPreview(){
   document.getElementById('importTotalRows').textContent = importState.rows.length;
-  const cols = ['external_ref','ticket_type','title','client_name','status','priority','agent_name','created_at'];
+  const cols = ['external_ref','ticket_type','title','client_name','category_name','status','impact','urgency','priority','agent_name','site','locality','created_at'];
   const thead = document.querySelector('#importPreviewTable thead');
   const tbody = document.querySelector('#importPreviewTable tbody');
   thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
@@ -2846,6 +2903,18 @@ document.getElementById('btnConfirmImport').addEventListener('click', async ()=>
         if(!error && data){ clientCache.set(name.toLowerCase(), data.id); clientsCreated++; }
       }
     }
+    // resolver/crear categorías por (tipo de ticket + nombre)
+    const categoryCache = new Map(STATE.categories.map(c=>[`${c.ticket_type}::${c.name.toLowerCase()}`, c.id]));
+    const uniqueCategoryPairs = [...new Set(payloads.filter(p=>p.category_name).map(p=>`${p.ticket_type}::${p.category_name}`))];
+    let categoriesCreated = 0;
+    for(const pair of uniqueCategoryPairs){
+      const [ticketType, name] = pair.split('::');
+      const cacheKey = `${ticketType}::${name.toLowerCase()}`;
+      if(!categoryCache.has(cacheKey)){
+        const {data, error} = await sb.from('categories').insert({ticket_type: ticketType, name}).select().single();
+        if(!error && data){ categoryCache.set(cacheKey, data.id); categoriesCreated++; }
+      }
+    }
     // resolver agentes por nombre o correo (solo coincidencias existentes; no se crean cuentas)
     const agentCache = new Map();
     STATE.agents.forEach(a=>{
@@ -2853,26 +2922,48 @@ document.getElementById('btnConfirmImport').addEventListener('click', async ()=>
       agentCache.set(a.email.toLowerCase(), a.id);
     });
 
-    const rowsToInsert = payloads.map(p=>({
-      external_ref: p.external_ref,
-      external_source: p.external_source,
-      ticket_type: p.ticket_type,
-      ticket_type_label: p.ticket_type_label,
-      title: p.title,
-      description: p.description,
-      client_id: p.client_name ? (clientCache.get(p.client_name.toLowerCase()) || null) : null,
-      status: p.status,
-      impact: p.impact,
-      urgency: p.urgency,
-      assigned_agent_id: p.agent_name ? (agentCache.get(p.agent_name.toLowerCase()) || null) : null,
-      reported_by: p.reported_by,
-      architecture: p.architecture,
-      site: p.site,
-      locality: p.locality,
+    // Homologar por folio (external_ref): si el ticket ya existe, se
+    // ACTUALIZA en vez de crear un duplicado — así reimportar el mismo
+    // reporte de Halo (o una versión más reciente) refresca los datos
+    // en vez de duplicar tickets.
+    const refs = payloads.map(p=>p.external_ref).filter(Boolean);
+    const extRefToId = new Map();
+    if(refs.length){
+      const {data: already} = await sb.from('tickets').select('id, external_ref').in('external_ref', refs);
+      (already||[]).forEach(t=>extRefToId.set(t.external_ref, t.id));
+    }
+
+    function buildRow(p){
+      return {
+        external_ref: p.external_ref,
+        external_source: p.external_source,
+        ticket_type: p.ticket_type,
+        ticket_type_label: p.ticket_type_label,
+        title: p.title,
+        description: p.description,
+        client_id: p.client_name ? (clientCache.get(p.client_name.toLowerCase()) || null) : null,
+        category_id: p.category_name ? (categoryCache.get(`${p.ticket_type}::${p.category_name.toLowerCase()}`) || null) : null,
+        status: p.status,
+        impact: p.impact,
+        urgency: p.urgency,
+        assigned_agent_id: p.agent_name ? (agentCache.get(p.agent_name.toLowerCase()) || null) : null,
+        reported_by: p.reported_by,
+        architecture: p.architecture,
+        site: p.site,
+        locality: p.locality,
+        sla_resolution_due: p.sla_resolution_due || undefined,
+        resolved_at: p.resolved_at || null,
+        closed_at: p.closed_at || null,
+      };
+    }
+
+    const newPayloads = payloads.filter(p => !p.external_ref || !extRefToId.has(p.external_ref));
+    const updatePayloads = payloads.filter(p => p.external_ref && extRefToId.has(p.external_ref));
+
+    const rowsToInsert = newPayloads.map(p => ({
+      ...buildRow(p),
       created_by_agent_id: STATE.agent.id,
       created_at: p.created_at || undefined,
-      resolved_at: p.resolved_at || null,
-      closed_at: p.closed_at || null,
       source: 'portal',
     }));
 
@@ -2888,14 +2979,23 @@ document.getElementById('btnConfirmImport').addEventListener('click', async ()=>
       progressEl.textContent = `Importados ${inserted} de ${rowsToInsert.length}...`;
     }
 
+    // actualizar (homologar) los tickets que ya existían
+    let updated = 0;
+    for(const p of updatePayloads){
+      const id = extRefToId.get(p.external_ref);
+      const {error} = await sb.from('tickets').update(buildRow(p)).eq('id', id);
+      if(!error) updated++;
+      progressEl.textContent = `Importados ${inserted}, actualizados ${updated} de ${payloads.length}...`;
+    }
+
     // marcar incumplimiento de SLA para tickets históricos ya resueltos
     const breachIds = insertedRows.filter(r=>r.resolved_at && r.sla_resolution_due && new Date(r.resolved_at) > new Date(r.sla_resolution_due)).map(r=>r.id);
     if(breachIds.length){
       await sb.from('tickets').update({sla_resolution_breached:true}).in('id', breachIds);
     }
 
-    progressEl.textContent = `Listo: ${inserted} tickets importados, ${clientsCreated} clientes nuevos creados.`;
-    toast(`Importación completa: ${inserted} tickets`);
+    progressEl.textContent = `Listo: ${inserted} tickets nuevos, ${updated} tickets existentes actualizados (homologados por folio), ${clientsCreated} clientes nuevos, ${categoriesCreated} categorías nuevas.`;
+    toast(`${inserted} nuevos, ${updated} actualizados`);
     await loadAll();
   }catch(err){
     toast('Error en la importación: '+err.message);
