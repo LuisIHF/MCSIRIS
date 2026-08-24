@@ -380,6 +380,7 @@ label.req::after{content:' *';color:var(--danger);}
       <div class="sb-item" data-view="templates"><span class="ic">▥</span>Plantillas</div>
       <div class="sb-item" data-view="sla" data-admin-only="1"><span class="ic">◷</span>Políticas SLA</div>
       <div class="sb-item" data-view="agents" data-admin-only="1"><span class="ic">◍</span>Agentes</div>
+      <div class="sb-item" data-view="groups" data-admin-only="1"><span class="ic">⌘</span>Grupos de soporte</div>
       <div class="sb-item" data-view="import" data-admin-only="1"><span class="ic">⇩</span>Importar tickets</div>
       <div class="sb-section-label">Análisis</div>
       <div class="sb-item" data-view="reports"><span class="ic">◫</span>Reportes / KPIs</div>
@@ -536,8 +537,32 @@ label.req::after{content:' *';color:var(--danger);}
     <div class="view" id="view-clients">
       <div class="topbar">
         <div><h2>Clientes</h2><div class="sub">Empresas y sitios atendidos por el NOC</div></div>
-        <div class="topbar-actions"><button class="btn btn-primary" id="btnNewClient">+ Nuevo cliente</button></div>
+        <div class="topbar-actions">
+          <button class="btn btn-ghost" id="btnToggleClientImport">Importar desde Excel/CSV</button>
+          <button class="btn btn-primary" id="btnNewClient">+ Nuevo cliente</button>
+        </div>
       </div>
+
+      <div class="panel" id="clientImportPanel" style="display:none;">
+        <div class="panel-flex"><h3>Importar clientes</h3></div>
+        <p class="hint" style="margin-bottom:10px;">Columnas reconocidas: Nombre (obligatorio), Nombre corto, Nivel de contrato, Contacto, Teléfono, Correo, Dirección, Notas. Si un cliente con el mismo nombre ya existe, se actualiza en vez de duplicarse.</p>
+        <input type="file" id="clientImportFile" accept=".csv,.xlsx,.xls">
+        <div id="clientImportMapPanel" style="display:none;margin-top:16px;">
+          <h4 style="font-size:13px;margin-bottom:10px;">Relaciona las columnas de tu archivo</h4>
+          <div id="clientImportMapGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;"></div>
+          <button class="btn btn-primary" id="btnClientImportPreview" style="margin-top:14px;">Ver vista previa</button>
+        </div>
+        <div id="clientImportPreviewPanel" style="display:none;margin-top:16px;">
+          <h4 style="font-size:13px;margin-bottom:10px;">Vista previa (<span id="clientImportTotal">0</span> clientes)</h4>
+          <div style="overflow-x:auto;"><table id="clientImportPreviewTable"><thead></thead><tbody></tbody></table></div>
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="btn btn-primary btn-sm" id="btnClientImportConfirm">Confirmar e importar</button>
+            <button class="btn btn-ghost btn-sm" id="btnClientImportCancel">Cancelar</button>
+          </div>
+          <div id="clientImportProgress" style="margin-top:10px;font-size:12.5px;color:var(--text-2);"></div>
+        </div>
+      </div>
+
       <div id="clientsList"></div>
     </div>
 
@@ -589,6 +614,20 @@ label.req::after{content:' *';color:var(--danger);}
       </div>
       <div class="panel">
         <p class="hint">El acceso es solo por invitación: crea aquí el nombre, correo y rol de cada agente; ellos activan su cuenta poniendo su propia contraseña en la pantalla de inicio de sesión, opción "Activar mi cuenta".</p>
+      </div>
+    </div>
+
+    <!-- ================= GRUPOS DE SOPORTE ================= -->
+    <div class="view" id="view-groups">
+      <div class="topbar">
+        <div><h2>Grupos de soporte</h2><div class="sub">Define las líneas o equipos a los que se asignan los tickets (ej. 1ª línea NOC, 2ª línea, Sistemas)</div></div>
+        <div class="topbar-actions"><button class="btn btn-primary" id="btnNewGroup">+ Nuevo grupo</button></div>
+      </div>
+      <div class="panel">
+        <table id="groupsTable"><thead><tr><th>Orden</th><th>Nombre</th><th>Descripción</th><th>Tickets abiertos</th><th>Activo</th><th></th></tr></thead><tbody></tbody></table>
+        <div class="empty-state" id="groupsEmpty" style="display:none;">
+          <div class="big">⌘</div><p><strong>Aún no hay grupos de soporte</strong></p><p>Crea el primero para poder asignar tickets por línea o equipo.</p>
+        </div>
       </div>
     </div>
 
@@ -842,6 +881,20 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
   </div>
 </div>
 
+<!-- ============ MODAL: GRUPO DE SOPORTE ============ -->
+<div class="modal-center" id="groupModal">
+  <div class="modal-box">
+    <div class="modal-head"><h3 id="groupModalTitle">Nuevo grupo de soporte</h3><button class="drawer-close" id="closeGroupModal">×</button></div>
+    <div class="modal-body">
+      <input type="hidden" id="grpId">
+      <div class="field"><label class="req">Nombre</label><input type="text" id="grpName" placeholder="Ej. 1ª línea (NOC), Redes, Sistemas"></div>
+      <div class="field"><label>Descripción</label><textarea id="grpDescription" rows="3" placeholder="Qué tipo de tickets atiende este grupo"></textarea></div>
+      <div class="field"><label>Orden</label><input type="number" id="grpSortOrder" value="10"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" id="cancelGroup">Cancelar</button><button class="btn btn-primary" id="submitGroup">Guardar</button></div>
+  </div>
+</div>
+
 <!-- ============ MODAL: INVITAR AGENTE ============ -->
 <div class="modal-center" id="inviteModal">
   <div class="modal-box">
@@ -994,8 +1047,15 @@ const STATUS_BY_TYPE = {
   cambio: ['nuevo','en_espera_cliente','aprobado','rechazado','programado','en_progreso','implementado','cerrado','cancelado']
 };
 const TYPE_LABELS = {incidente:'Incidente', solicitud:'Solicitud', problema:'Problema', cambio:'Cambio'};
-const LINE_LABELS = {l1:'1ª línea (NOC)', l2:'2ª línea', l3:'3ª línea (Sistemas)'};
-const LINE_SHORT = {l1:'1ª línea', l2:'2ª línea', l3:'3ª línea'};
+function groupLabel(id){
+  const g = STATE.supportGroups?.find(x=>x.id===id);
+  return g ? g.name : 'Sin grupo';
+}
+function groupShortLabel(id){
+  const g = STATE.supportGroups?.find(x=>x.id===id);
+  if(!g) return 'Sin grupo';
+  return g.name.length > 14 ? g.name.slice(0,13)+'…' : g.name;
+}
 const SOURCE_LABELS = {telefono:'Teléfono',email:'Email',portal:'Portal',chat:'Chat',monitoreo_prtg:'Monitoreo PRTG',whatsapp:'WhatsApp',presencial:'Presencial'};
 const ROLE_LABELS = {admin:'Administrador', agente_noc:'Agente NOC', agente_especialista:'Agente especialista'};
 
@@ -1122,6 +1182,8 @@ function applyRolePermissions(role){
   const btnNewClient = document.getElementById('btnNewClient');
   const btnNewSla = document.getElementById('btnNewSla');
   if(btnNewClient) btnNewClient.style.display = isAdmin ? 'inline-flex' : 'none';
+  const btnToggleClientImport = document.getElementById('btnToggleClientImport');
+  if(btnToggleClientImport) btnToggleClientImport.style.display = isAdmin ? 'inline-flex' : 'none';
   if(btnNewSla) btnNewSla.style.display = isAdmin ? 'inline-flex' : 'none';
 }
 
@@ -1162,7 +1224,7 @@ document.querySelectorAll('[data-view-link]').forEach(a=>{
   a.addEventListener('click', (e)=>{e.preventDefault(); switchView(a.dataset.viewLink);});
 });
 function switchView(view){
-  const adminOnlyViews = ['clients','sla','agents','import'];
+  const adminOnlyViews = ['clients','sla','agents','import','groups'];
   if(adminOnlyViews.includes(view) && STATE.agent?.role !== 'admin'){
     toast('Solo un administrador puede acceder a esta sección');
     view = 'dashboard';
@@ -1179,18 +1241,20 @@ function switchView(view){
    CARGA DE DATOS
 ========================================================= */
 async function loadAll(){
-  const [clients, agents, categories, templates, slaPolicies] = await Promise.all([
+  const [clients, agents, categories, templates, slaPolicies, supportGroups] = await Promise.all([
     sb.from('clients').select('*').eq('active', true).order('name'),
     sb.from('agents').select('*').order('full_name'),
     sb.from('categories').select('*').eq('active', true).order('name'),
     sb.from('templates').select('*').eq('active', true).order('created_at'),
     sb.from('sla_policies').select('*, clients(name)').order('priority'),
+    sb.from('support_groups').select('*').order('sort_order'),
   ]);
   STATE.clients = clients.data || [];
   STATE.agents = agents.data || [];
   STATE.categories = categories.data || [];
   STATE.templates = templates.data || [];
   STATE.slaPolicies = slaPolicies.data || [];
+  STATE.supportGroups = supportGroups.data || [];
 
   const activeAgents = STATE.agents.filter(a=>a.active!==false);
   populateSelect('ntClient', STATE.clients, 'id','name','Sin asignar');
@@ -1200,12 +1264,16 @@ async function loadAll(){
   populateSelect('clLevel', null,null,null,null); // noop guard
   populateSelect('slaClient', STATE.clients, 'id','name','Global (todos los clientes)');
 
+  const activeGroups = STATE.supportGroups.filter(g=>g.active!==false);
+  populateSelect('ntSupportLine', activeGroups, 'id','name', null);
+
   await loadTickets();
   renderDashboard();
   renderClients();
   renderTemplates();
   renderSla();
   renderAgentsTable();
+  renderGroupsTable();
 }
 
 function populateSelect(id, items, valKey, labelKey, placeholder){
@@ -1391,12 +1459,18 @@ function renderTypeChart(){
 }
 function renderLineChart(){
   const ctx = document.getElementById('chartByLine').getContext('2d');
-  const counts = {l1:0, l2:0, l3:0};
-  STATE.tickets.forEach(t=>{ if(!['resuelto','cerrado','cancelado','rechazado'].includes(t.status)) counts[t.support_line||'l1']++; });
+  const groups = (STATE.supportGroups||[]).filter(g=>g.active!==false);
+  const counts = {};
+  groups.forEach(g=>counts[g.id]=0);
+  STATE.tickets.forEach(t=>{
+    if(['resuelto','cerrado','cancelado','rechazado'].includes(t.status)) return;
+    if(t.support_group_id && counts[t.support_group_id]!==undefined) counts[t.support_group_id]++;
+  });
   if(chartLine) chartLine.destroy();
+  const palette = ['#2454C7','#B58900','#6D28D9','#0F9D58','#C0261F','#5B9BFF','#8B93A3'];
   chartLine = new Chart(ctx, {
     type:'bar',
-    data:{ labels:Object.keys(counts).map(k=>LINE_LABELS[k]), datasets:[{data:Object.values(counts), backgroundColor:['#2454C7','#B58900','#6D28D9'], borderRadius:6}] },
+    data:{ labels:groups.map(g=>g.name), datasets:[{data:groups.map(g=>counts[g.id]||0), backgroundColor:groups.map((g,i)=>palette[i%palette.length]), borderRadius:6}] },
     options:{ indexAxis:'y', plugins:{legend:{display:false}}, responsive:true, maintainAspectRatio:false, scales:{x:{beginAtZero:true, ticks:{precision:0}}} }
   });
 }
@@ -1438,27 +1512,34 @@ function computeGroupData(){
   const openTickets = STATE.tickets.filter(t=>
     (!typeFilter || t.ticket_type===typeFilter) && !['resuelto','cerrado','cancelado','rechazado'].includes(t.status)
   );
-  const lines = {l1:{}, l2:{}, l3:{}};
-  const lineTotals = {l1:0, l2:0, l3:0};
+  const groups = (STATE.supportGroups||[]).filter(g=>g.active!==false);
+  const byGroup = {};
+  const groupTotals = {};
+  groups.forEach(g=>{ byGroup[g.id] = {}; groupTotals[g.id] = 0; });
+  const ungrouped = {}; let ungroupedTotal = 0;
   openTickets.forEach(t=>{
-    const line = t.support_line || 'l1';
-    lineTotals[line] = (lineTotals[line]||0) + 1;
     const key = t.assigned_agent_id || '__unassigned__';
-    lines[line][key] = (lines[line][key]||0) + 1;
+    if(t.support_group_id && byGroup[t.support_group_id]){
+      groupTotals[t.support_group_id]++;
+      byGroup[t.support_group_id][key] = (byGroup[t.support_group_id][key]||0) + 1;
+    } else {
+      ungroupedTotal++;
+      ungrouped[key] = (ungrouped[key]||0) + 1;
+    }
   });
   const slaBreachCount = openTickets.filter(t=> slaStatus(t).cls === 'sla-breach').length;
-  return { lines, lineTotals, slaBreachCount };
+  return { groups, byGroup, groupTotals, ungrouped, ungroupedTotal, slaBreachCount };
 }
 
 function renderGroupPanel(){
-  const { lines, lineTotals, slaBreachCount } = computeGroupData();
+  const { groups, byGroup, groupTotals, ungrouped, ungroupedTotal, slaBreachCount } = computeGroupData();
   const agentById = new Map(STATE.agents.map(a=>[a.id, a]));
   const gf = STATE.groupFilter;
 
-  const linesHtml = ['l1','l2','l3'].map(lineKey=>{
-    const collapsed = !!STATE.groupCollapsed[lineKey];
-    const isLineActive = gf?.type==='line' && gf.line===lineKey;
-    const entries = Object.entries(lines[lineKey]).sort((a,b)=>{
+  function renderNode(groupKey, groupName, entriesObj, total){
+    const collapsed = !!STATE.groupCollapsed[groupKey];
+    const isLineActive = gf?.type==='line' && gf.groupId===groupKey;
+    const entries = Object.entries(entriesObj).sort((a,b)=>{
       if(a[0]==='__unassigned__') return -1;
       if(b[0]==='__unassigned__') return 1;
       const an = agentById.get(a[0])?.full_name || '';
@@ -1468,22 +1549,30 @@ function renderGroupPanel(){
     const childrenHtml = entries.map(([key, count])=>{
       const isUnassigned = key === '__unassigned__';
       const label = isUnassigned ? 'Sin asignar' : (agentById.get(key)?.full_name || 'Agente');
-      const isActive = gf?.type==='line_agent' && gf.line===lineKey && (gf.agentId||'__unassigned__')===key;
-      return `<div class="grp-child ${isActive?'active':''}" data-line="${lineKey}" data-agent="${isUnassigned?'':key}">
+      const isActive = gf?.type==='line_agent' && gf.groupId===groupKey && (gf.agentId||'__unassigned__')===key;
+      return `<div class="grp-child ${isActive?'active':''}" data-group="${groupKey}" data-agent="${isUnassigned?'':key}">
         <span class="grp-icon">${isUnassigned?'○':'●'}</span>
         <span class="grp-label">${escapeHtml(label)}</span>
         <span class="grp-count">${count}</span>
       </div>`;
     }).join('');
     return `<div class="grp-node">
-      <div class="grp-head ${isLineActive?'active':''} ${collapsed?'collapsed':''}" data-line="${lineKey}">
-        <span class="tri" data-toggle="${lineKey}">▾</span>
-        <span class="grp-label">${LINE_LABELS[lineKey]}</span>
-        <span class="grp-count">${lineTotals[lineKey]||0}</span>
+      <div class="grp-head ${isLineActive?'active':''} ${collapsed?'collapsed':''}" data-group="${groupKey}">
+        <span class="tri" data-toggle="${groupKey}">▾</span>
+        <span class="grp-label">${escapeHtml(groupName)}</span>
+        <span class="grp-count">${total||0}</span>
       </div>
       <div class="grp-children" style="${collapsed?'display:none;':''}">${childrenHtml || '<div class="hint" style="padding:4px 8px;">Sin tickets abiertos</div>'}</div>
     </div>`;
-  }).join('');
+  }
+
+  let linesHtml = groups.map(g => renderNode(g.id, g.name, byGroup[g.id], groupTotals[g.id])).join('');
+  if(ungroupedTotal > 0){
+    linesHtml += renderNode('__none__', 'Sin grupo asignado', ungrouped, ungroupedTotal);
+  }
+  if(groups.length === 0){
+    linesHtml = '<div class="hint" style="padding:8px;">Aún no hay grupos de soporte creados. Un administrador puede crearlos en "Grupos de soporte".</div>';
+  }
 
   const slaActive = gf?.type==='sla_breach';
   document.getElementById('ticketsGroupPanel').innerHTML = `
@@ -1496,24 +1585,24 @@ function renderGroupPanel(){
 
   document.querySelectorAll('.grp-head').forEach(el=>{
     el.addEventListener('click', (e)=>{
-      const line = el.dataset.line;
-      STATE.groupFilter = (gf?.type==='line' && gf.line===line) ? null : {type:'line', line};
+      const groupId = el.dataset.group;
+      STATE.groupFilter = (gf?.type==='line' && gf.groupId===groupId) ? null : {type:'line', groupId};
       renderGroupPanel(); renderTicketsTable();
     });
   });
   document.querySelectorAll('.tri').forEach(el=>{
     el.addEventListener('click', (e)=>{
       e.stopPropagation();
-      const line = el.dataset.toggle;
-      STATE.groupCollapsed[line] = !STATE.groupCollapsed[line];
+      const groupId = el.dataset.toggle;
+      STATE.groupCollapsed[groupId] = !STATE.groupCollapsed[groupId];
       renderGroupPanel();
     });
   });
   document.querySelectorAll('.grp-child').forEach(el=>{
     el.addEventListener('click', ()=>{
-      const line = el.dataset.line, agentId = el.dataset.agent || null;
-      const isSame = gf?.type==='line_agent' && gf.line===line && (gf.agentId||'')===(agentId||'');
-      STATE.groupFilter = isSame ? null : {type:'line_agent', line, agentId};
+      const groupId = el.dataset.group, agentId = el.dataset.agent || null;
+      const isSame = gf?.type==='line_agent' && gf.groupId===groupId && (gf.agentId||'')===(agentId||'');
+      STATE.groupFilter = isSame ? null : {type:'line_agent', groupId, agentId};
       renderGroupPanel(); renderTicketsTable();
     });
   });
@@ -1527,11 +1616,12 @@ function renderGroupFilterChip(){
   const chip = document.getElementById('groupFilterChip');
   const gf = STATE.groupFilter;
   if(!gf){ chip.style.display = 'none'; return; }
+  const grpName = (gid)=> gid==='__none__' ? 'Sin grupo asignado' : groupLabel(gid);
   let text = '';
-  if(gf.type==='line') text = `Filtrando: ${LINE_LABELS[gf.line]}`;
+  if(gf.type==='line') text = `Filtrando: ${grpName(gf.groupId)}`;
   if(gf.type==='line_agent'){
     const agentName = gf.agentId ? (STATE.agents.find(a=>a.id===gf.agentId)?.full_name||'Agente') : 'Sin asignar';
-    text = `Filtrando: ${LINE_LABELS[gf.line]} › ${agentName}`;
+    text = `Filtrando: ${grpName(gf.groupId)} › ${agentName}`;
   }
   if(gf.type==='sla_breach') text = 'Filtrando: SLA Sobrepasado';
   chip.style.display = 'block';
@@ -1555,7 +1645,7 @@ function buildTicketRowHtml(t){
       <td onclick="openTicketDrawer('${t.id}')">${t.agents?.full_name || '—'}</td>
       <td onclick="openTicketDrawer('${t.id}')">${escapeHtml(catLabel)}</td>
       <td onclick="openTicketDrawer('${t.id}')">${t.clients?.name || '—'}</td>
-      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status">${LINE_SHORT[t.support_line||'l1']}</span></td>
+      <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-status">${escapeHtml(groupShortLabel(t.support_group_id))}</span></td>
       <td onclick="openTicketDrawer('${t.id}')"><span class="pill pill-${t.priority.toLowerCase()}">${t.priority}</span></td>
       <td onclick="openTicketDrawer('${t.id}')" style="text-transform:capitalize;">${t.impact||'—'}</td>
       <td onclick="openTicketDrawer('${t.id}')" style="text-transform:capitalize;">${t.urgency||'—'}</td>
@@ -1605,9 +1695,10 @@ function renderTicketsTable(){
     if(locality && (t.locality||'')!==locality) return false;
     if(ticketTypeLabel && (t.ticket_type_label||'')!==ticketTypeLabel) return false;
     if(gf){
-      if(gf.type==='line' && (t.support_line||'l1')!==gf.line) return false;
+      const ticketGroupKey = t.support_group_id || '__none__';
+      if(gf.type==='line' && ticketGroupKey!==gf.groupId) return false;
       if(gf.type==='line_agent'){
-        if((t.support_line||'l1')!==gf.line) return false;
+        if(ticketGroupKey!==gf.groupId) return false;
         if(gf.agentId ? t.assigned_agent_id!==gf.agentId : !!t.assigned_agent_id) return false;
       }
       if(gf.type==='sla_breach' && slaStatus(t).cls!=='sla-breach') return false;
@@ -1955,7 +2046,8 @@ function openNewTicketModal(defaultType){
   document.getElementById('ntImpact').value='medio'; document.getElementById('ntUrgency').value='medio';
   document.getElementById('ntSource').value='monitoreo_prtg';
   document.getElementById('ntAssign').value='';
-  document.getElementById('ntSupportLine').value='l1';
+  const firstGroup = STATE.supportGroups?.find(g=>g.active!==false);
+  if(firstGroup) document.getElementById('ntSupportLine').value = firstGroup.id;
   updatePriorityPreview();
   renderCategoryOptions();
   renderTemplatePicker();
@@ -2049,7 +2141,7 @@ document.getElementById('submitNewTicket').addEventListener('click', async ()=>{
       source: document.getElementById('ntSource').value,
       reported_by: document.getElementById('ntReportedBy').value,
       assigned_agent_id: document.getElementById('ntAssign').value || null,
-      support_line: document.getElementById('ntSupportLine').value,
+      support_group_id: document.getElementById('ntSupportLine').value || null,
       architecture: document.getElementById('ntArchitecture').value || null,
       site: document.getElementById('ntSite').value || null,
       locality: document.getElementById('ntLocality').value || null,
@@ -2150,11 +2242,10 @@ function renderTicketDrawerBody(t, comments){
         <select id="drAssign"><option value="">Sin asignar</option>${STATE.agents.map(a=>`<option value="${a.id}" ${a.id===t.assigned_agent_id?'selected':''}>${a.full_name}</option>`).join('')}</select>
       </div>
     </div>
-    <div class="field" style="margin-bottom:16px;"><label>Línea de soporte</label>
+    <div class="field" style="margin-bottom:16px;"><label>Grupo de soporte</label>
       <select id="drSupportLine">
-        <option value="l1" ${(t.support_line||'l1')==='l1'?'selected':''}>1ª línea (NOC)</option>
-        <option value="l2" ${t.support_line==='l2'?'selected':''}>2ª línea</option>
-        <option value="l3" ${t.support_line==='l3'?'selected':''}>3ª línea (Sistemas)</option>
+        <option value="">Sin grupo asignado</option>
+        ${(STATE.supportGroups||[]).filter(g=>g.active!==false).map(g=>`<option value="${g.id}" ${t.support_group_id===g.id?'selected':''}>${escapeHtml(g.name)}</option>`).join('')}
       </select>
     </div>
     <button class="btn btn-primary btn-sm" id="drSaveBtn" style="margin-bottom:20px;">Guardar cambios</button>
@@ -2183,8 +2274,8 @@ function renderTicketDrawerBody(t, comments){
 async function saveTicketUpdates(t){
   const newStatus = document.getElementById('drStatus').value;
   const newAgent = document.getElementById('drAssign').value || null;
-  const newLine = document.getElementById('drSupportLine').value;
-  const patch = {status:newStatus, assigned_agent_id:newAgent, support_line:newLine};
+  const newLine = document.getElementById('drSupportLine').value || null;
+  const patch = {status:newStatus, assigned_agent_id:newAgent, support_group_id:newLine};
   if(['resuelto'].includes(newStatus) && !t.resolved_at) patch.resolved_at = new Date().toISOString();
   if(['cerrado'].includes(newStatus) && !t.closed_at) patch.closed_at = new Date().toISOString();
   if(!t.first_response_at && newStatus!=='nuevo') patch.first_response_at = new Date().toISOString();
@@ -2261,6 +2352,165 @@ document.getElementById('submitClient').addEventListener('click', async ()=>{
   toast('Cliente guardado');
   document.getElementById('clientModal').classList.remove('active');
   await loadAll();
+});
+
+/* =========================================================
+   IMPORTAR CLIENTES DESDE EXCEL / CSV
+========================================================= */
+const CLIENT_IMPORT_FIELDS = [
+  {key:'', label:'— No importar —'},
+  {key:'name', label:'Nombre (obligatorio)'},
+  {key:'short_name', label:'Nombre corto'},
+  {key:'contract_level', label:'Nivel de contrato'},
+  {key:'contact_name', label:'Contacto'},
+  {key:'contact_phone', label:'Teléfono'},
+  {key:'contact_email', label:'Correo'},
+  {key:'address', label:'Dirección'},
+  {key:'notes', label:'Notas'},
+];
+let clientImportState = { rows: [], headers: [], mapping: {} };
+
+document.getElementById('btnToggleClientImport').addEventListener('click', ()=>{
+  const panel = document.getElementById('clientImportPanel');
+  panel.style.display = panel.style.display==='none' ? 'block' : 'none';
+});
+
+function guessClientField(header){
+  const h = header.trim().toLowerCase();
+  if(/^nombre$|^name$|raz[oó]n social|empresa/.test(h)) return 'name';
+  if(/corto|short|siglas|abreviatura/.test(h)) return 'short_name';
+  if(/nivel|contrato|plan|contract/.test(h)) return 'contract_level';
+  if(/contacto|contact.?name/.test(h)) return 'contact_name';
+  if(/tel[eé]fono|phone|celular/.test(h)) return 'contact_phone';
+  if(/correo|email|mail/.test(h)) return 'contact_email';
+  if(/direcci[oó]n|address|domicilio/.test(h)) return 'address';
+  if(/nota|coment|notes/.test(h)) return 'notes';
+  return '';
+}
+
+document.getElementById('clientImportFile').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const isExcel = /\.xlsx?$/i.test(file.name);
+
+  function onParsed(rows, headers){
+    clientImportState.rows = rows;
+    clientImportState.headers = headers;
+    if(clientImportState.rows.length===0){ toast('El archivo no tiene filas de datos'); return; }
+    renderClientImportMapping();
+    document.getElementById('clientImportMapPanel').style.display = 'block';
+    document.getElementById('clientImportPreviewPanel').style.display = 'none';
+  }
+
+  if(isExcel){
+    const reader = new FileReader();
+    reader.onload = (evt)=>{
+      try{
+        const wb = XLSX.read(evt.target.result, {type:'array', cellDates:true});
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, {defval:''});
+        const headers = rows.length ? Object.keys(rows[0]) : [];
+        onParsed(rows, headers);
+      }catch(err){ toast('Error leyendo Excel: '+err.message); }
+    };
+    reader.onerror = ()=> toast('No se pudo leer el archivo Excel');
+    reader.readAsArrayBuffer(file);
+  } else {
+    Papa.parse(file, {
+      header: true, skipEmptyLines: true,
+      complete: (res)=> onParsed(res.data, res.meta.fields || []),
+      error: (err)=> toast('Error leyendo CSV: '+err.message)
+    });
+  }
+});
+
+function renderClientImportMapping(){
+  const grid = document.getElementById('clientImportMapGrid');
+  grid.innerHTML = clientImportState.headers.map(h=>{
+    const guess = guessClientField(h);
+    return `<div class="field" style="margin-bottom:0;">
+      <label>${escapeHtml(h)}</label>
+      <select data-client-map-header="${escapeHtml(h)}">
+        ${CLIENT_IMPORT_FIELDS.map(f=>`<option value="${f.key}" ${f.key===guess?'selected':''}>${f.label}</option>`).join('')}
+      </select>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('btnClientImportPreview').addEventListener('click', ()=>{
+  clientImportState.mapping = {};
+  document.querySelectorAll('#clientImportMapGrid select[data-client-map-header]').forEach(sel=>{
+    if(sel.value) clientImportState.mapping[sel.dataset.clientMapHeader] = sel.value;
+  });
+  if(!Object.values(clientImportState.mapping).includes('name')){ toast('Debes mapear al menos la columna de Nombre'); return; }
+  renderClientImportPreview();
+});
+
+function mapClientRow(row){
+  const out = {};
+  for(const [header, field] of Object.entries(clientImportState.mapping)){
+    out[field] = (row[header] ?? '').toString().trim();
+  }
+  return out;
+}
+
+function renderClientImportPreview(){
+  const rows = clientImportState.rows.map(mapClientRow).filter(r=>r.name);
+  document.getElementById('clientImportTotal').textContent = rows.length;
+  const cols = ['name','short_name','contract_level','contact_name','contact_phone','contact_email'];
+  const thead = document.querySelector('#clientImportPreviewTable thead');
+  const tbody = document.querySelector('#clientImportPreviewTable tbody');
+  thead.innerHTML = '<tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr>';
+  tbody.innerHTML = rows.slice(0,8).map(r=>'<tr>'+cols.map(c=>`<td>${escapeHtml(r[c]||'')}</td>`).join('')+'</tr>').join('');
+  document.getElementById('clientImportPreviewPanel').style.display = 'block';
+}
+
+document.getElementById('btnClientImportCancel').addEventListener('click', ()=>{
+  document.getElementById('clientImportPreviewPanel').style.display = 'none';
+});
+
+document.getElementById('btnClientImportConfirm').addEventListener('click', async ()=>{
+  const btn = document.getElementById('btnClientImportConfirm');
+  const progressEl = document.getElementById('clientImportProgress');
+  btn.disabled = true; btn.textContent = 'Importando...';
+  try{
+    const rows = clientImportState.rows.map(mapClientRow).filter(r=>r.name);
+    const existingByName = new Map(STATE.clients.map(c=>[c.name.toLowerCase(), c.id]));
+
+    let created = 0, updated = 0;
+    for(const r of rows){
+      const payload = {
+        name: r.name,
+        short_name: r.short_name || null,
+        contract_level: r.contract_level || 'estandar',
+        contact_name: r.contact_name || null,
+        contact_phone: r.contact_phone || null,
+        contact_email: r.contact_email || null,
+        address: r.address || null,
+        notes: r.notes || null,
+      };
+      const existingId = existingByName.get(r.name.toLowerCase());
+      if(existingId){
+        const {error} = await sb.from('clients').update(payload).eq('id', existingId);
+        if(!error) updated++;
+      } else {
+        const {data, error} = await sb.from('clients').insert(payload).select().single();
+        if(!error && data){ existingByName.set(r.name.toLowerCase(), data.id); created++; }
+      }
+      progressEl.textContent = `Procesados ${created+updated} de ${rows.length}...`;
+    }
+    progressEl.textContent = `Listo: ${created} clientes nuevos, ${updated} actualizados.`;
+    toast(`${created} nuevos, ${updated} actualizados`);
+    document.getElementById('clientImportPreviewPanel').style.display = 'none';
+    document.getElementById('clientImportMapPanel').style.display = 'none';
+    document.getElementById('clientImportFile').value = '';
+    await loadAll();
+  }catch(err){
+    progressEl.textContent = 'Error: '+err.message;
+    toast('Falló la importación de clientes');
+  }finally{
+    btn.disabled = false; btn.textContent = 'Confirmar e importar';
+  }
 });
 
 /* =========================================================
@@ -2461,6 +2711,75 @@ document.getElementById('submitInvite').addEventListener('click', async ()=>{
 });
 
 /* =========================================================
+   GRUPOS DE SOPORTE (CRUD, solo admin)
+========================================================= */
+function renderGroupsTable(){
+  const tbody = document.querySelector('#groupsTable tbody');
+  const groups = STATE.supportGroups || [];
+  document.getElementById('groupsEmpty').style.display = groups.length===0 ? 'block' : 'none';
+  const openCounts = {};
+  STATE.tickets?.forEach(t=>{
+    if(['resuelto','cerrado','cancelado','rechazado'].includes(t.status)) return;
+    if(t.support_group_id) openCounts[t.support_group_id] = (openCounts[t.support_group_id]||0)+1;
+  });
+  tbody.innerHTML = groups.map(g=>`
+    <tr>
+      <td>${g.sort_order ?? '—'}</td>
+      <td><strong>${escapeHtml(g.name)}</strong></td>
+      <td style="color:var(--text-2);">${escapeHtml(g.description||'—')}</td>
+      <td>${openCounts[g.id]||0}</td>
+      <td>${g.active!==false ? '<span class="pill" style="background:var(--success-bg);color:var(--success);">Activo</span>' : '<span class="pill" style="background:var(--slate-bg);color:var(--text-2);">Inactivo</span>'}</td>
+      <td style="display:flex;gap:6px;">
+        <button class="btn btn-ghost btn-sm" data-edit-group="${g.id}">Editar</button>
+        <button class="btn btn-ghost btn-sm" data-toggle-group="${g.id}">${g.active!==false?'Desactivar':'Activar'}</button>
+      </td>
+    </tr>`).join('');
+
+  tbody.querySelectorAll('button[data-edit-group]').forEach(btn=>{
+    btn.addEventListener('click', ()=>openGroupModal(btn.dataset.editGroup));
+  });
+  tbody.querySelectorAll('button[data-toggle-group]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const g = STATE.supportGroups.find(x=>x.id===btn.dataset.toggleGroup);
+      const {error} = await sb.from('support_groups').update({active: !(g.active!==false)}).eq('id', g.id);
+      if(error){ toast('Error: '+error.message); return; }
+      toast('Grupo actualizado');
+      await loadAll();
+    });
+  });
+}
+
+function openGroupModal(id){
+  const g = id ? STATE.supportGroups.find(x=>x.id===id) : null;
+  document.getElementById('groupModalTitle').textContent = g ? 'Editar grupo de soporte' : 'Nuevo grupo de soporte';
+  document.getElementById('grpId').value = g?.id || '';
+  document.getElementById('grpName').value = g?.name || '';
+  document.getElementById('grpDescription').value = g?.description || '';
+  document.getElementById('grpSortOrder').value = g?.sort_order ?? (STATE.supportGroups.length+1)*10;
+  document.getElementById('groupModal').classList.add('active');
+}
+document.getElementById('btnNewGroup').addEventListener('click', ()=>openGroupModal(null));
+document.getElementById('closeGroupModal').addEventListener('click', ()=>document.getElementById('groupModal').classList.remove('active'));
+document.getElementById('cancelGroup').addEventListener('click', ()=>document.getElementById('groupModal').classList.remove('active'));
+document.getElementById('submitGroup').addEventListener('click', async ()=>{
+  const id = document.getElementById('grpId').value;
+  const name = document.getElementById('grpName').value.trim();
+  const description = document.getElementById('grpDescription').value.trim();
+  const sort_order = parseInt(document.getElementById('grpSortOrder').value) || 0;
+  if(!name){ toast('El nombre es obligatorio'); return; }
+  const payload = {name, description, sort_order};
+  const {error} = id ? await sb.from('support_groups').update(payload).eq('id', id) : await sb.from('support_groups').insert(payload);
+  if(error){
+    if(/duplicate/i.test(error.message)) toast('Ya existe un grupo con ese nombre');
+    else toast('Error: '+error.message);
+    return;
+  }
+  toast('Grupo guardado');
+  document.getElementById('groupModal').classList.remove('active');
+  await loadAll();
+});
+
+/* =========================================================
    ZONA DE PELIGRO: eliminar todo el historial de tickets
 ========================================================= */
 document.getElementById('btnOpenResetTickets').addEventListener('click', ()=>{
@@ -2563,10 +2882,14 @@ document.getElementById('btnHaloPreview').addEventListener('click', async ()=>{
   try{
     const data = await callHalo('sync', { pageSize: 50, maxPages: 10 });
     haloPreviewRows = data.preview || [];
+    const uniqueRefs = new Set(haloPreviewRows.map(r=>r.external_ref)).size;
+    const dupWarning = uniqueRefs < haloPreviewRows.length
+      ? ` ⚠ Se detectaron ${haloPreviewRows.length - uniqueRefs} filas con folio repetido dentro de esta misma consulta (posible problema de paginación en la API de Halo); se resolverán automáticamente al confirmar.`
+      : '';
     const catalogNote = data.usedCalltypeCatalog
       ? 'La clasificación Incidente/Solicitud/Problema/Cambio se resolvió usando el catálogo real de tipos de ticket de tu HaloITSM.'
       : 'No se pudo leer el catálogo de tipos de ticket de Halo; la clasificación se infirió por nombre — revisa con cuidado las filas marcadas en ámbar.';
-    out.textContent = `Se encontraron ${data.fetched} tickets en HaloITSM. ${catalogNote} Revisa (y corrige si hace falta) la columna "Tipo ITIL" antes de confirmar.`;
+    out.textContent = `Se encontraron ${data.fetched} tickets en HaloITSM. ${catalogNote} Revisa (y corrige si hace falta) la columna "Tipo ITIL" antes de confirmar.${dupWarning}`;
     renderHaloPreview(haloPreviewRows, data.fetched);
   }catch(err){
     out.textContent = '✖ '+err.message;
@@ -2580,8 +2903,8 @@ function renderHaloPreview(rows, total){
   document.getElementById('haloPreviewTotal').textContent = total;
   const cols = [
     {k:'external_ref', l:'Folio'}, {k:'title', l:'Título'}, {k:'ticket_type_label', l:'Tipo de ticket (Halo)'},
-    {k:'status', l:'Estado'}, {k:'priority', l:'Prioridad'}, {k:'client_name', l:'Organización'},
-    {k:'agent_name', l:'Agente'}, {k:'site', l:'Sitio'}, {k:'locality', l:'Localidad'}, {k:'created_at', l:'Creado'},
+    {k:'category_name', l:'Categoría'}, {k:'status', l:'Estado'}, {k:'impact', l:'Impacto'}, {k:'urgency', l:'Urgencia'},
+    {k:'client_name', l:'Organización'}, {k:'agent_name', l:'Agente'}, {k:'site', l:'Sitio'}, {k:'locality', l:'Localidad'}, {k:'created_at', l:'Creado'},
   ];
   const thead = document.querySelector('#haloPreviewTable thead');
   const tbody = document.querySelector('#haloPreviewTable tbody');
@@ -2620,8 +2943,9 @@ document.getElementById('btnHaloConfirmSync').addEventListener('click', async ()
   out.textContent = 'Importando tickets confirmados...';
   try{
     const data = await callHalo('commit', { rows: haloPreviewRows });
-    out.textContent = `✔ Sincronización completa: ${data.imported} tickets nuevos importados, ${data.updated} tickets existentes actualizados (homologados por su folio de Halo), ${data.clientsCreated} clientes nuevos creados.`;
-    toast(`Importados ${data.imported} tickets nuevos`);
+    const dedupNote = data.deduped > 0 ? ` (se detectaron y descartaron ${data.deduped} filas repetidas en el mismo lote antes de guardar)` : '';
+    out.textContent = `✔ Sincronización completa: ${data.imported} tickets nuevos, ${data.updated} actualizados (homologados por folio), ${data.clientsCreated} clientes nuevos, ${data.categoriesCreated} categorías nuevas.${dedupNote}`;
+    toast(`${data.imported} nuevos, ${data.updated} actualizados`);
     document.getElementById('haloPreviewPanel').style.display = 'none';
     haloPreviewRows = [];
     await loadAll();
