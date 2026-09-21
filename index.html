@@ -2628,6 +2628,7 @@ function renderDrawerMain(t, comments){
     <div class="tab-strip" id="drawerTabStrip">
       <button class="tab-btn ${STATE.drawerTab==='progreso'?'active':''}" data-drtab="progreso">Progreso</button>
       <button class="tab-btn ${STATE.drawerTab==='detalles'?'active':''}" data-drtab="detalles">Detalles adicionales</button>
+      <button class="tab-btn ${STATE.drawerTab==='archivos'?'active':''}" data-drtab="archivos">Archivos</button>
       <button class="tab-btn ${STATE.drawerTab==='historial'?'active':''}" data-drtab="historial">Ver Log</button>
     </div>
 
@@ -2648,7 +2649,87 @@ function renderDrawerTabContent(t, comments){
   const el = document.getElementById('drawerTabContent');
   if(STATE.drawerTab === 'progreso') return renderProgresoTab(el, t, comments);
   if(STATE.drawerTab === 'detalles') return renderDetallesTab(el, t);
+  if(STATE.drawerTab === 'archivos') return renderArchivosTab(el, t);
   if(STATE.drawerTab === 'historial') return renderHistorialTab(el, t, comments);
+}
+
+function fmtFileSize(bytes){
+  if(bytes==null) return '';
+  if(bytes < 1024) return bytes+' B';
+  if(bytes < 1024*1024) return (bytes/1024).toFixed(1)+' KB';
+  return (bytes/1024/1024).toFixed(1)+' MB';
+}
+
+function renderArchivosTab(el, t){
+  el.innerHTML = `
+    <div class="field" style="margin-bottom:14px;">
+      <label>Adjuntar archivos (logs, capturas, evidencias...)</label>
+      <input type="file" id="drFileInput" multiple>
+      <div id="drUploadMsg" class="hint" style="margin-top:6px;"></div>
+    </div>
+    <div id="drAttachmentsList"><p class="hint">Cargando archivos...</p></div>
+  `;
+
+  async function loadAttachments(){
+    const listEl = document.getElementById('drAttachmentsList');
+    const { data, error } = await sb.from('ticket_attachments')
+      .select('*, agents(full_name)').eq('ticket_id', t.id).order('created_at', {ascending:false});
+    if(error){ listEl.innerHTML = `<p class="hint">✖ No se pudieron cargar los archivos: ${escapeHtml(error.message)}</p>`; return; }
+    if(!data || !data.length){ listEl.innerHTML = '<p class="hint">Sin archivos adjuntos todavía.</p>'; return; }
+    listEl.innerHTML = data.map(a=>`
+      <div class="comment" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <div>
+          <div style="font-weight:600;font-size:13px;">${escapeHtml(a.file_name)}</div>
+          <div class="hint">${escapeHtml(a.agents?.full_name || 'Agente')} · ${fmtDate(a.created_at)} · ${fmtFileSize(a.size_bytes)}</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="btn btn-ghost btn-sm" data-dl-path="${escapeHtml(a.storage_path)}">Descargar</button>
+          ${(STATE.agent.role==='admin' || a.agent_id===STATE.agent.id) ? `<button class="btn btn-ghost btn-sm" data-delatt-id="${a.id}" data-delatt-path="${escapeHtml(a.storage_path)}">Eliminar</button>` : ''}
+        </div>
+      </div>`).join('');
+    listEl.querySelectorAll('[data-dl-path]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const { data: urlData, error: urlErr } = await sb.storage.from('ticket-attachments').createSignedUrl(btn.dataset.dlPath, 300);
+        if(urlErr){ toast('No se pudo generar el enlace: '+urlErr.message); return; }
+        window.open(urlData.signedUrl, '_blank');
+      });
+    });
+    listEl.querySelectorAll('[data-delatt-id]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        if(!confirm('¿Eliminar este archivo? No se puede deshacer.')) return;
+        await sb.storage.from('ticket-attachments').remove([btn.dataset.delattPath]);
+        await sb.from('ticket_attachments').delete().eq('id', btn.dataset.delattId);
+        loadAttachments();
+      });
+    });
+  }
+
+  document.getElementById('drFileInput').addEventListener('change', async (ev)=>{
+    const files = Array.from(ev.target.files || []);
+    if(!files.length) return;
+    const msg = document.getElementById('drUploadMsg');
+    for(const file of files){
+      if(file.size > 25*1024*1024){
+        msg.textContent = `"${file.name}" pesa más de 25MB y no se subió.`;
+        continue;
+      }
+      msg.textContent = `Subiendo ${file.name}...`;
+      const safeName = file.name.replace(/[^\w.\-]+/g, '_');
+      const path = `${t.id}/${Date.now()}_${safeName}`;
+      const { error: upErr } = await sb.storage.from('ticket-attachments').upload(path, file);
+      if(upErr){ msg.textContent = `✖ No se pudo subir "${file.name}": ${upErr.message}`; continue; }
+      const { error: insErr } = await sb.from('ticket_attachments').insert({
+        ticket_id: t.id, agent_id: STATE.agent.id, file_name: file.name,
+        storage_path: path, mime_type: file.type || null, size_bytes: file.size,
+      });
+      if(insErr){ msg.textContent = `✖ Se subió "${file.name}" pero no se pudo guardar su registro: ${insErr.message}`; continue; }
+    }
+    msg.textContent = 'Listo.';
+    ev.target.value = '';
+    loadAttachments();
+  });
+
+  loadAttachments();
 }
 
 /* ---- Presentación de comentarios (propios, enviados a Halo, o historial importado de Halo) ---- */
