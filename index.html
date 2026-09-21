@@ -709,6 +709,7 @@ HALO_CLIENT_SECRET = (tu client secret)</div>
           <button class="btn btn-ghost btn-sm" id="btnHaloTest">Probar conexión</button>
           <button class="btn btn-ghost btn-sm" id="btnHaloRaw">Ver datos crudos (diagnóstico)</button>
           <button class="btn btn-ghost btn-sm" id="btnHaloTicketTypes">Ver catálogo de tipos de ticket (diagnóstico)</button>
+          <button class="btn btn-ghost btn-sm" id="btnHaloDiagScope">Diagnosticar por qué faltan tickets</button>
           <button class="btn btn-primary btn-sm" id="btnHaloPreview">Ver vista previa de sincronización</button>
         </div>
         <div id="haloResult" style="margin-top:12px;font-size:12.5px;color:var(--text-2);white-space:pre-wrap;"></div>
@@ -3437,6 +3438,21 @@ document.getElementById('btnHaloTicketTypes').addEventListener('click', async ()
     const data = await callHalo('raw_ticket_types');
     out.textContent = 'Catálogo real de tipos de ticket en tu HaloITSM (revisa el campo que indica el calltype/categoría de cada uno):\n\n'
       + JSON.stringify(data.raw, null, 2).slice(0, 4000);
+  }catch(err){
+    out.textContent = '✖ '+err.message;
+  }
+});
+
+document.getElementById('btnHaloDiagScope').addEventListener('click', async ()=>{
+  const out = document.getElementById('haloResult');
+  out.textContent = 'Probando distintas variantes de la consulta a HaloITSM, un momento...';
+  try{
+    const data = await callHalo('diag_scope');
+    const lines = data.results.map(r=>
+      r.error ? `✖ ${r.variant} → ERROR: ${r.error}`
+              : `• ${r.variant} → record_count: ${r.record_count}, tickets devueltos en esta prueba: ${r.devueltos}`
+    );
+    out.textContent = 'Resultado del diagnóstico (copia y pega todo esto en el chat):\n\n' + lines.join('\n');
   }catch(err){
     out.textContent = '✖ '+err.message;
   }
