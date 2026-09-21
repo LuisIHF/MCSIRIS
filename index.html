@@ -3470,7 +3470,11 @@ document.getElementById('btnHaloPreview').addEventListener('click', async ()=>{
     // pageSize/maxPages al máximo que permite la función (100 x 50 = hasta 5000
     // tickets por vista previa) para no dejar incidentes o solicitudes fuera
     // por un límite de paginación demasiado bajo.
-    const data = await callHalo('sync', { pageSize: 100, maxPages: 50 });
+    // pageSize=1000 porque en tu instancia de Halo el tamaño de página real
+    // se controla con el parámetro "count" (no "pageSize"), que además tiene
+    // un tope de 1000 por solicitud; con maxPages:20 cubrimos hasta 20,000
+    // tickets en una sola vista previa.
+    const data = await callHalo('sync', { pageSize: 1000, maxPages: 20 });
     haloPreviewRows = data.preview || [];
     const uniqueRefs = new Set(haloPreviewRows.map(r=>r.external_ref)).size;
     const dupWarning = uniqueRefs < haloPreviewRows.length
