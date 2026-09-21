@@ -351,6 +351,15 @@ tbody tr:hover{background:var(--surface-2);}
 .comment .body{font-size:13px;white-space:pre-wrap;}
 .comment.internal{border-left:3px solid var(--warning);}
 .comment.external{border-left:3px solid var(--primary);}
+.comment-row{display:flex;margin-bottom:10px;}
+.comment-row.internal{justify-content:flex-end;}
+.comment-row.external{justify-content:flex-start;}
+.comment-row .comment{max-width:85%;margin-bottom:0;border-radius:16px;border-left:none;border-top:3px solid var(--border);}
+.comment-row.internal .comment{border-top-color:var(--warning);border-top-right-radius:4px;}
+.comment-row.external .comment{border-top-color:var(--primary);border-top-left-radius:4px;}
+.comment details{margin-top:6px;}
+.comment details summary{cursor:pointer;font-size:11.5px;color:var(--text-3);}
+.comment details .body{margin-top:6px;color:var(--text-3);border-top:1px dashed var(--border);padding-top:6px;}
 
 .badge-count{background:var(--danger);color:#fff;font-size:10px;padding:1px 6px;border-radius:10px;font-weight:700;margin-left:auto;}
 
@@ -2656,6 +2665,34 @@ function commentBodyText(c){
   if(c.external_action_id) return (c.body||'').replace(/^\[Historial de HaloITSM(?:\s*—\s*[^\]]*)?\]\s*/, '');
   return c.body || '';
 }
+// Los correos importados de HaloITSM suelen traer, después del mensaje
+// nuevo, toda la cadena anterior citada + firma/disclaimer legal. Cortamos
+// ahí para que se vea como un mensaje limpio, y dejamos el resto disponible
+// en un desplegable por si hace falta el detalle completo.
+function splitCleanBody(rawText){
+  const t = (rawText||'').trim();
+  const cutMarkers = [
+    /De:\s[\s\S]{0,80}?Enviado:\s[\s\S]{0,80}?Para:\s[\s\S]{0,150}?Asunto:/i,
+    /From:\s[\s\S]{0,80}?Sent:\s[\s\S]{0,80}?To:\s[\s\S]{0,150}?Subject:/i,
+    /Note:\s*This e-?mail message may contain/i,
+    /This e-?mail message may contain confidential/i,
+    /Reserve una reuni[oó]n\b/i,
+    /LinkedIn\s*\|\s*Facebook\s*\|\s*YouTube/i,
+  ];
+  let cutAt = t.length;
+  for(const re of cutMarkers){
+    const m = t.match(re);
+    if(m && m.index!=null && m.index>15 && m.index<cutAt) cutAt = m.index;
+  }
+  const cleaned = t.slice(0, cutAt).trim();
+  return { cleaned: cleaned || t, full: t, truncated: !!(cleaned && cleaned.length < t.length) };
+}
+function renderCommentBody(c){
+  const { cleaned, full, truncated } = splitCleanBody(commentBodyText(c));
+  const main = `<div class="body">${escapeHtml(cleaned)}</div>`;
+  if(!truncated) return main;
+  return main + `<details><summary>Ver correo completo (firma y cadena anterior)</summary><div class="body">${escapeHtml(full)}</div></details>`;
+}
 
 function renderProgresoTab(el, t, comments){
   el.innerHTML = `
@@ -2671,10 +2708,10 @@ function renderProgresoTab(el, t, comments){
     </div>
     <div id="drComments" style="margin-top:14px;">
       ${comments.length===0 ? '<p style="color:var(--text-3);font-size:12.5px;">Sin comentarios aún.</p>' : comments.map(c=>`
-        <div class="comment ${c.is_internal?'internal':'external'}">
+        <div class="comment-row ${c.is_internal?'internal':'external'}"><div class="comment ${c.is_internal?'internal':'external'}">
           <div class="meta"><span>${escapeHtml(commentAuthorName(c))} · ${c.is_internal?'Nota interna':'Respuesta a cliente'}${commentBadge(c)}</span><span>${fmtDate(c.created_at)}</span></div>
-          <div class="body">${escapeHtml(commentBodyText(c))}</div>
-        </div>`).join('')}
+          ${renderCommentBody(c)}
+        </div></div>`).join('')}
     </div>
   `;
   document.getElementById('drAddComment').addEventListener('click', ()=>addTicketComment(t.id, t.external_ref));
@@ -2780,10 +2817,10 @@ function renderHistorialTab(el, t, comments){
     </div>
     <div id="drFetchHaloHistoryMsg" class="hint" style="margin-bottom:10px;"></div>
     ${comments.length===0 ? '<p class="hint">Sin comentarios.</p>' : comments.slice().reverse().map(c=>`
-      <div class="comment ${c.is_internal?'internal':'external'}">
+      <div class="comment-row ${c.is_internal?'internal':'external'}"><div class="comment ${c.is_internal?'internal':'external'}">
         <div class="meta"><span>${escapeHtml(commentAuthorName(c))} · ${c.is_internal?'Nota interna':'Respuesta a cliente'}${commentBadge(c)}</span><span>${fmtDate(c.created_at)}</span></div>
-        <div class="body">${escapeHtml(commentBodyText(c))}</div>
-      </div>`).join('')}
+        ${renderCommentBody(c)}
+      </div></div>`).join('')}
   `;
   document.getElementById('drFetchHaloHistory')?.addEventListener('click', async ()=>{
     const btn = document.getElementById('drFetchHaloHistory');
